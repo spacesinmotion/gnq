@@ -279,7 +279,7 @@ typedef enum ValueType {
 } ValueType;
 
 typedef union Value {
-  Node *o;
+  Node *n;
   ValueType t;
   int64_t ni;
   double nf;
@@ -362,15 +362,40 @@ const char *gnq_tostring(Node *n) {
   return (Node_type(n) == ShortString) ? n->cdr.ss : n->cdr.ls;
 }
 
-// fe_Object* fe_cons(fe_Context *ctx, fe_Object *car, fe_Object *cdr);
-// fe_Object* fe_bool(fe_Context *ctx, int b);
-// fe_Object* fe_string(fe_Context *ctx, const char *str);
-// fe_Object* fe_symbol(fe_Context *ctx, const char *name);
-// fe_Object* fe_cfunc(fe_Context *ctx, fe_CFunc fn);
-// fe_Object* fe_ptr(fe_Context *ctx, void *ptr);
-// fe_Object* fe_list(fe_Context *ctx, fe_Object **objs, int n);
-// fe_Object* fe_car(fe_Context *ctx, fe_Object *obj);
-// fe_Object* fe_cdr(fe_Context *ctx, fe_Object *obj);
+Node *gnq_cons(Arena *a, Node *n1, Node *n2) {
+  Node *n = Arena_node(a, Pair);
+  n->car.n = n1;
+  n->cdr.n = n2;
+  return n;
+}
+Node *gnq_car(Node *n) {
+  assert(Node_type(n) == Pair);
+  return n->car.n;
+}
+Node *gnq_cdr(Node *n) {
+  assert(Node_type(n) == Pair);
+  return n->cdr.n;
+}
+
+Node *gnq_list(Arena *a, int count, ...) {
+  Node *nodes[16];
+
+  va_list argp;
+  va_start(argp, count);
+  for (int i = 0; i < count; ++i)
+    nodes[i] = va_arg(argp, Node *);
+  va_end(argp);
+
+  Node *n = NULL;
+  for (int i = count - 1; i >= 0; --i)
+    n = gnq_cons(a, nodes[i], n);
+  return n;
+}
+Node *gnq_next(Node **list) {
+  Node *n = gnq_car(*list);
+  *list = gnq_cdr(*list);
+  return n;
+}
 
 Node *Lisp_parse(const char *code) { return NULL; }
 
@@ -412,6 +437,29 @@ void arena_test() {
   assert(NumberInt == Node_type(n2));
   assert(-84 == gnq_toint(n2));
 
+  Node *nc = gnq_cons(&a, n, n2);
+  assert(a.len == 8);
+  assert(gnq_car(nc) == n);
+  assert(gnq_cdr(nc) == n2);
+
+  Arena_free(&a);
+}
+
+void list_test() {
+  printf("list_test\n");
+
+  Arena a = Arena_create(256);
+
+  Node *n1 = gnq_int(&a, 42);
+  Node *n2 = gnq_float(&a, 4.2);
+  Node *n3 = gnq_string(&a, "id");
+
+  Node *list = gnq_list(&a, 3, n1, n2, n3);
+  assert(n1 == gnq_next(&list) && list != NULL);
+  assert(n2 == gnq_next(&list) && list != NULL);
+  assert(n3 == gnq_next(&list));
+  assert(NULL == list);
+
   Arena_free(&a);
 }
 
@@ -419,6 +467,7 @@ int main() {
   assert(sizeof(ptr_size) == sizeof(void *));
 
   arena_test();
+  list_test();
 
   printf("ok\n");
   return 0;
