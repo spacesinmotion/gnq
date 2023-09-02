@@ -274,8 +274,10 @@ typedef enum ValueType {
   Pair = 0,
   NumberInt = 1,
   NumberFloat = 3,
-  ShortString = 5,
-  LongString = 7,
+  StringShort = 5,
+  StringLong = 7,
+  SymbolShort = 9,
+  SymbolLong = 11,
 } ValueType;
 
 typedef union Value {
@@ -303,7 +305,7 @@ Arena Arena_create(size_t nb_nodes) {
   return (Arena){(Node *)malloc(nb_nodes * sizeof(Node)), 0, nb_nodes};
 }
 
-Arena Arena_free(Arena *a) {
+void Arena_free(Arena *a) {
   free(a->memory);
   a->memory = NULL;
   a->cap = a->len = 0;
@@ -346,20 +348,31 @@ double gnq_tofloat(Node *n) {
 Node *gnq_string(Arena *a, const char *t) {
   size_t len = strlen(t);
   if (len < 8) {
-    Node *n = Arena_node(a, ShortString);
+    Node *n = Arena_node(a, StringShort);
     strncpy(n->cdr.ss, t, 7);
     return n;
   }
 
-  Node *n = Arena_node(a, LongString);
+  Node *n = Arena_node(a, StringLong);
   n->cdr.ls = Arena_str(a, len);
   strcpy(n->cdr.ls, t);
   return n;
 }
 const char *gnq_tostring(Node *n) {
-  assert(n && (Node_type(n) == ShortString || Node_type(n) == LongString));
+  assert(n && (Node_type(n) == StringShort || Node_type(n) == StringLong));
 
-  return (Node_type(n) == ShortString) ? n->cdr.ss : n->cdr.ls;
+  return (Node_type(n) == StringShort) ? n->cdr.ss : n->cdr.ls;
+}
+
+Node *gnq_sym(Arena *a, const char *s) {
+  Node *n = gnq_string(a, s);
+  n->car.t = n->car.t == StringShort ? SymbolShort : SymbolLong;
+  return n;
+}
+const char *gnq_tosym(Node *n) {
+  assert(n && (Node_type(n) == SymbolShort || Node_type(n) == SymbolLong));
+
+  return (Node_type(n) == SymbolShort) ? n->cdr.ss : n->cdr.ls;
 }
 
 Node *gnq_cons(Arena *a, Node *n1, Node *n2) {
@@ -397,8 +410,6 @@ Node *gnq_next(Node **list) {
   return n;
 }
 
-Node *Lisp_parse(const char *code) { return NULL; }
-
 void arena_test() {
   printf("arena_test\n");
 
@@ -421,13 +432,13 @@ void arena_test() {
   n = gnq_string(&a, "id");
   assert(a.cap == 256);
   assert(a.len == 3);
-  assert(ShortString == Node_type(n));
+  assert(StringShort == Node_type(n));
   assert(strcmp("id", gnq_tostring(n)) == 0);
 
   n = gnq_string(&a, "a way longer string ");
   assert(a.cap == 256);
   assert(a.len == 6);
-  assert(LongString == Node_type(n));
+  assert(StringLong == Node_type(n));
   assert(strcmp("a way longer string ", gnq_tostring(n)) == 0);
 
   Node *n2 = gnq_int(&a, -84);
@@ -441,6 +452,18 @@ void arena_test() {
   assert(a.len == 8);
   assert(gnq_car(nc) == n);
   assert(gnq_cdr(nc) == n2);
+
+  n = gnq_sym(&a, "id");
+  assert(a.cap == 256);
+  assert(a.len == 9);
+  assert(SymbolShort == Node_type(n));
+  assert(strcmp("id", gnq_tosym(n)) == 0);
+
+  n = gnq_sym(&a, "a_way_longer_symbol");
+  assert(a.cap == 256);
+  assert(a.len == 12);
+  assert(SymbolLong == Node_type(n));
+  assert(strcmp("a_way_longer_symbol", gnq_tosym(n)) == 0);
 
   Arena_free(&a);
 }
@@ -463,11 +486,74 @@ void list_test() {
   Arena_free(&a);
 }
 
+Node *lisp_parse_(Arena *a, char **cc) {
+  char *c = *cc;
+
+#define done(x)                                                                \
+  *cc = c;                                                                     \
+  return (x);
+
+  while (*c) {
+    if (isspace(*c)) {
+      ++c;
+      continue;
+    }
+
+    char *ef = c;
+    double f = strtod(c, &ef);
+    char *ei = c;
+    int64_t i = strtol(c, &ei, 10);
+    if (ei > c) {
+      c = (ef > ei) ? ef : ei;
+      done((ef > ei) ? gnq_float(a, f) : gnq_int(a, i));
+    }
+
+    char *es = c;
+    while (*es && !isspace(*es) && *es != '(' && *es != ')')
+      ++es;
+    if (es > c) {
+      char x = *es;
+      *es = '\0';
+      Node *s = gnq_sym(a, c);
+      *es = x;
+      done(s);
+    }
+
+    c++;
+  }
+  return NULL;
+}
+
+Node *lisp_parse(Arena *a, char *c) { return lisp_parse_(a, &c); }
+
+void parser_test() {
+  printf("parser_test\n");
+
+  Arena a = Arena_create(256);
+
+  Node *ni = lisp_parse(&a, "  42");
+  assert(ni && Node_type(ni) == NumberInt && gnq_toint(ni) == 42);
+
+  Node *nf = lisp_parse(&a, " -4.2  ");
+  assert(nf && Node_type(nf) == NumberFloat && gnq_tofloat(nf) == -4.2);
+
+  Node *nsym = lisp_parse(&a, "  sym");
+  assert(nsym && Node_type(nsym) == SymbolShort &&
+         strcmp(gnq_tosym(nsym), "sym") == 0);
+
+  nsym = lisp_parse(&a, "  sym 4 sym");
+  assert(nsym && Node_type(nsym) == SymbolShort &&
+         strcmp(gnq_tosym(nsym), "sym") == 0);
+
+  Arena_free(&a);
+}
+
 int main() {
   assert(sizeof(ptr_size) == sizeof(void *));
 
   arena_test();
   list_test();
+  parser_test();
 
   printf("ok\n");
   return 0;
