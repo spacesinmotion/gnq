@@ -115,9 +115,7 @@ typedef struct ShuntYard {
   int val_stack_size;
 } ShuntYard;
 
-ShuntYard ShuntYard_create() {
-  return (ShuntYard){.op_stack_size = 0, .val_stack_size = 0};
-}
+ShuntYard ShuntYard_create() { return (ShuntYard){.op_stack_size = 0, .val_stack_size = 0}; }
 
 void ShuntYard_push_val(ShuntYard *y, Expression *e) {
   y->val_stack[y->val_stack_size] = e;
@@ -304,9 +302,7 @@ typedef struct Arena {
   size_t cap;
 } Arena;
 
-Arena Arena_create(size_t nb_nodes) {
-  return (Arena){(Node *)malloc(nb_nodes * sizeof(Node)), 0, nb_nodes};
-}
+Arena Arena_create(size_t nb_nodes) { return (Arena){(Node *)malloc(nb_nodes * sizeof(Node)), 0, nb_nodes}; }
 
 void Arena_free(Arena *a) {
   free(a->memory);
@@ -495,9 +491,9 @@ void list_test() {
 
 Node *lisp_parse_(Arena *a, const char *c, char const **e) {
 
-#define done(x)                                                                \
-  if (e)                                                                       \
-    *e = c;                                                                    \
+#define done(x)                                                                                                        \
+  if (e)                                                                                                               \
+    *e = c;                                                                                                            \
   return (x);
 
   while (*c) {
@@ -570,14 +566,12 @@ void parser_atom_test() {
   assert(nf && Node_type(nf) == NumberFloat && gnq_tofloat(nf) == -4.2);
 
   Node *nsym = lisp_parse(&a, "  sym");
-  assert(nsym && Node_type(nsym) == SymbolShort &&
-         strcmp(gnq_tosym(nsym), "sym") == 0);
+  assert(nsym && Node_type(nsym) == SymbolShort && strcmp(gnq_tosym(nsym), "sym") == 0);
 
   const char *a_row = "  sym 4 sym";
   const char *e = a_row;
   nsym = lisp_parse_(&a, a_row, &e);
-  assert(nsym && Node_type(nsym) == SymbolShort &&
-         strcmp(gnq_tosym(nsym), "sym") == 0);
+  assert(nsym && Node_type(nsym) == SymbolShort && strcmp(gnq_tosym(nsym), "sym") == 0);
   assert(e > a_row);
   a_row = e;
   nsym = lisp_parse_(&a, a_row, &e);
@@ -586,8 +580,7 @@ void parser_atom_test() {
   assert(e > a_row);
   a_row = e;
   nsym = lisp_parse_(&a, a_row, &e);
-  assert(nsym && Node_type(nsym) == SymbolShort &&
-         strcmp(gnq_tosym(nsym), "sym") == 0);
+  assert(nsym && Node_type(nsym) == SymbolShort && strcmp(gnq_tosym(nsym), "sym") == 0);
 
   Arena_free(&a);
 }
@@ -628,14 +621,16 @@ void parser_list_test() {
   nn = gnq_next(&n);
   assert(nn && Node_type(nn) == NumberInt && gnq_toint(nn) == 3 && gnq_isnil(n));
 
-  n = lisp_parse(&a, "(1 () 3)");
+  n = lisp_parse(&a, "(1 () 3.2  gg)");
   assert(n && Node_type(n) == Pair);
   nn = gnq_next(&n);
   assert(nn && Node_type(nn) == NumberInt && gnq_toint(nn) == 1 && !gnq_isnil(n));
   nn = gnq_next(&n);
   assert(gnq_isnil(nn) && !gnq_isnil(n));
   nn = gnq_next(&n);
-  assert(nn && Node_type(nn) == NumberInt && gnq_toint(nn) == 3 && gnq_isnil(n));
+  assert(nn && Node_type(nn) == NumberFloat && gnq_tofloat(nn) == 3.2 && !gnq_isnil(n));
+  nn = gnq_next(&n);
+  assert(nn && Node_type(nn) == SymbolShort && strcmp(gnq_tosym(nn), "gg") == 0 && gnq_isnil(n));
 
   Arena_free(&a);
 }
