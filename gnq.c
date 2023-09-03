@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <ctype.h>
+#include <inttypes.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -496,72 +497,70 @@ Node *lisp_parse_(Arena *a, const char *c, char const **e) {
     *e = c;                                                                                                            \
   return (x);
 
-  while (*c) {
-    if (isspace(*c)) {
-      ++c;
-      continue;
-    }
+  while (*c && isspace(*c))
+    ++c;
 
-    if (*c == '(') {
-      c++;
-      Node *list = &nil;
-      Node *last = &nil;
-      while (*c && *c != ')') {
-        const char *e = c;
-
-        Node *sub = lisp_parse_(a, c, &e);
-        if (*e) {
-          if (last != &nil) {
-            last->cdr.n = gnq_cons(a, sub, &nil);
-            last = gnq_cdr(last);
-          } else {
-            last = gnq_cons(a, sub, &nil);
-            list = last;
-          }
-          c = e;
-        }
-      }
-      assert(*c && *c == ')');
-      c++;
-      done(list);
-    }
-
-    if (*c == '"') {
-      char *es = (char *)c;
-      do {
-        ++es;
-        assert(*es);
-      } while (*es != '"');
-      *es = '\0';
-      Node *ns = gnq_string(a, c + 1);
-      *es = '"';
-      c = es + 1;
-      done(ns);
-    }
-
-    char *ef = (char *)c;
-    double f = strtod(c, &ef);
-    char *ei = (char *)c;
-    int64_t i = strtol(c, &ei, 10);
-    if (ei > c) {
-      c = (ef > ei) ? ef : ei;
-      done((ef > ei) ? gnq_float(a, f) : gnq_int(a, i));
-    }
-
-    char *es = (char *)c;
-    while (*es && !isspace(*es) && *es != '(' && *es != ')')
-      ++es;
-    if (es > c) {
-      char x = *es;
-      *es = '\0';
-      Node *s = gnq_sym(a, c);
-      *es = x;
-      c = es;
-      done(s);
-    }
-
+  if (*c == '(') {
     c++;
+    Node *list = &nil;
+    Node *last = &nil;
+    while (*c && *c != ')') {
+      const char *e = c;
+
+      Node *sub = lisp_parse_(a, c, &e);
+      if (*e) {
+        if (last != &nil) {
+          last->cdr.n = gnq_cons(a, sub, &nil);
+          last = gnq_cdr(last);
+        } else {
+          last = gnq_cons(a, sub, &nil);
+          list = last;
+        }
+        c = e;
+      }
+      while (*c && isspace(*c))
+        ++c;
+    }
+
+    assert(*c && *c == ')');
+    c++;
+    done(list);
   }
+
+  if (*c == '"') {
+    char *es = (char *)c;
+    do {
+      ++es;
+      assert(*es);
+    } while (*es != '"');
+    *es = '\0';
+    Node *ns = gnq_string(a, c + 1);
+    *es = '"';
+    c = es + 1;
+    done(ns);
+  }
+
+  char *ef = (char *)c;
+  double f = strtod(c, &ef);
+  char *ei = (char *)c;
+  int64_t i = strtol(c, &ei, 10);
+  if (ei > c) {
+    c = (ef > ei) ? ef : ei;
+    done((ef > ei) ? gnq_float(a, f) : gnq_int(a, i));
+  }
+
+  char *es = (char *)c;
+  while (*es && !isspace(*es) && *es != '(' && *es != ')')
+    ++es;
+  if (es > c) {
+    char x = *es;
+    *es = '\0';
+    Node *s = gnq_sym(a, c);
+    *es = x;
+    c = es;
+    done(s);
+  }
+
   return &nil;
 }
 
@@ -698,6 +697,8 @@ void parser_lisp_compare() {
   assert(!gnq_equal(lisp_parse(&a, "(sym 1)"), lisp_parse(&a, "(sym 1 2.2)")));
   assert(gnq_equal(lisp_parse(&a, "()"), lisp_parse(&a, "")));
 
+  assert(gnq_equal(lisp_parse(&a, "(fn 1)"), lisp_parse(&a, "(fn 1 )")));
+
   Arena_free(&a);
 }
 
@@ -746,8 +747,8 @@ void parser_lisp_out() {
   assert(lisp_str(b, 256, lisp_parse(&a, "(fn 3)")) == 6);
   assert(strcmp("(fn 3)", b) == 0);
 
-  // assert(lisp_str(b, 256, lisp_parse(&a, " (  fn  ( a   b  ) 3 xxx )")) == 16);
-  // assert(strcmp("(fn (a b) 3 xxx)", b) == 0);
+  assert(lisp_str(b, 256, lisp_parse(&a, " (  fn  ( a   b  ) 3 xxx )")) == 16);
+  assert(strcmp("(fn (a b) 3 xxx)", b) == 0);
 
   Arena_free(&a);
 }
