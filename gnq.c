@@ -291,7 +291,7 @@ struct Node {
   Value car, cdr;
 };
 
-ValueType Node_type(Node *n) {
+ValueType gnq_type(Node *n) {
   assert(n);
   return (n->car.t & 0x1) ? n->car.t : Pair;
 }
@@ -330,7 +330,7 @@ Node *gnq_int(Arena *a, int64_t i) {
   return n;
 }
 int64_t gnq_toint(Node *n) {
-  assert(n && Node_type(n) == NumberInt);
+  assert(n && gnq_type(n) == NumberInt);
   return n->cdr.ni;
 }
 
@@ -340,7 +340,7 @@ Node *gnq_float(Arena *a, double f) {
   return n;
 }
 double gnq_tofloat(Node *n) {
-  assert(n && Node_type(n) == NumberFloat);
+  assert(n && gnq_type(n) == NumberFloat);
   return n->cdr.nf;
 }
 
@@ -358,9 +358,9 @@ Node *gnq_string(Arena *a, const char *t) {
   return n;
 }
 const char *gnq_tostring(Node *n) {
-  assert(n && (Node_type(n) == StringShort || Node_type(n) == StringLong));
+  assert(n && (gnq_type(n) == StringShort || gnq_type(n) == StringLong));
 
-  return (Node_type(n) == StringShort) ? n->cdr.ss : n->cdr.ls;
+  return (gnq_type(n) == StringShort) ? n->cdr.ss : n->cdr.ls;
 }
 
 Node *gnq_sym(Arena *a, const char *s) {
@@ -369,9 +369,9 @@ Node *gnq_sym(Arena *a, const char *s) {
   return n;
 }
 const char *gnq_tosym(Node *n) {
-  assert(n && (Node_type(n) == SymbolShort || Node_type(n) == SymbolLong));
+  assert(n && (gnq_type(n) == SymbolShort || gnq_type(n) == SymbolLong));
 
-  return (Node_type(n) == SymbolShort) ? n->cdr.ss : n->cdr.ls;
+  return (gnq_type(n) == SymbolShort) ? n->cdr.ss : n->cdr.ls;
 }
 
 Node *gnq_cons(Arena *a, Node *n1, Node *n2) {
@@ -381,11 +381,11 @@ Node *gnq_cons(Arena *a, Node *n1, Node *n2) {
   return n;
 }
 Node *gnq_car(Node *n) {
-  assert(Node_type(n) == Pair);
+  assert(gnq_type(n) == Pair);
   return n->car.n;
 }
 Node *gnq_cdr(Node *n) {
-  assert(Node_type(n) == Pair);
+  assert(gnq_type(n) == Pair);
   return n->cdr.n;
 }
 
@@ -422,32 +422,32 @@ void arena_test() {
   Node *n = gnq_int(&a, 42);
   assert(a.cap == 256);
   assert(a.len == 1);
-  assert(NumberInt == Node_type(n));
+  assert(NumberInt == gnq_type(n));
   assert(42 == gnq_toint(n));
 
   n = gnq_float(&a, 4.2);
   assert(a.cap == 256);
   assert(a.len == 2);
-  assert(NumberFloat == Node_type(n));
+  assert(NumberFloat == gnq_type(n));
   assert(4.2 == gnq_tofloat(n));
 
   n = gnq_string(&a, "id");
   assert(a.cap == 256);
   assert(a.len == 3);
-  assert(StringShort == Node_type(n));
+  assert(StringShort == gnq_type(n));
   assert(strcmp("id", gnq_tostring(n)) == 0);
 
   n = gnq_string(&a, "a way longer string ");
   assert(a.cap == 256);
   assert(a.len == 6);
-  assert(StringLong == Node_type(n));
+  assert(StringLong == gnq_type(n));
   assert(strcmp("a way longer string ", gnq_tostring(n)) == 0);
 
   Node *n2 = gnq_int(&a, -84);
   assert(strcmp("a way longer string ", gnq_tostring(n)) == 0);
   assert(a.cap == 256);
   assert(a.len == 7);
-  assert(NumberInt == Node_type(n2));
+  assert(NumberInt == gnq_type(n2));
   assert(-84 == gnq_toint(n2));
 
   Node *nc = gnq_cons(&a, n, n2);
@@ -458,13 +458,13 @@ void arena_test() {
   n = gnq_sym(&a, "id");
   assert(a.cap == 256);
   assert(a.len == 9);
-  assert(SymbolShort == Node_type(n));
+  assert(SymbolShort == gnq_type(n));
   assert(strcmp("id", gnq_tosym(n)) == 0);
 
   n = gnq_sym(&a, "a_way_longer_symbol");
   assert(a.cap == 256);
   assert(a.len == 12);
-  assert(SymbolLong == Node_type(n));
+  assert(SymbolLong == gnq_type(n));
   assert(strcmp("a_way_longer_symbol", gnq_tosym(n)) == 0);
 
   Arena_free(&a);
@@ -526,6 +526,19 @@ Node *lisp_parse_(Arena *a, const char *c, char const **e) {
       done(list);
     }
 
+    if (*c == '"') {
+      char *es = (char *)c;
+      do {
+        ++es;
+        assert(*es);
+      } while (*es != '"');
+      *es = '\0';
+      Node *ns = gnq_string(a, c + 1);
+      *es = '"';
+      c = es + 1;
+      done(ns);
+    }
+
     char *ef = (char *)c;
     double f = strtod(c, &ef);
     char *ei = (char *)c;
@@ -560,27 +573,30 @@ void parser_atom_test() {
   Arena a = Arena_create(256);
 
   Node *ni = lisp_parse(&a, "  42");
-  assert(ni && Node_type(ni) == NumberInt && gnq_toint(ni) == 42);
+  assert(ni && gnq_type(ni) == NumberInt && gnq_toint(ni) == 42);
 
   Node *nf = lisp_parse(&a, " -4.2  ");
-  assert(nf && Node_type(nf) == NumberFloat && gnq_tofloat(nf) == -4.2);
+  assert(nf && gnq_type(nf) == NumberFloat && gnq_tofloat(nf) == -4.2);
+
+  Node *nstr = lisp_parse(&a, "  \"str\"");
+  assert(nstr && gnq_type(nstr) == StringShort && strcmp(gnq_tostring(nstr), "str") == 0);
 
   Node *nsym = lisp_parse(&a, "  sym");
-  assert(nsym && Node_type(nsym) == SymbolShort && strcmp(gnq_tosym(nsym), "sym") == 0);
+  assert(nsym && gnq_type(nsym) == SymbolShort && strcmp(gnq_tosym(nsym), "sym") == 0);
 
   const char *a_row = "  sym 4 sym";
   const char *e = a_row;
   nsym = lisp_parse_(&a, a_row, &e);
-  assert(nsym && Node_type(nsym) == SymbolShort && strcmp(gnq_tosym(nsym), "sym") == 0);
+  assert(nsym && gnq_type(nsym) == SymbolShort && strcmp(gnq_tosym(nsym), "sym") == 0);
   assert(e > a_row);
   a_row = e;
   nsym = lisp_parse_(&a, a_row, &e);
-  assert(nsym && Node_type(nsym) == NumberInt);
-  assert(nsym && Node_type(nsym) == NumberInt && gnq_toint(nsym) == 4);
+  assert(nsym && gnq_type(nsym) == NumberInt);
+  assert(nsym && gnq_type(nsym) == NumberInt && gnq_toint(nsym) == 4);
   assert(e > a_row);
   a_row = e;
   nsym = lisp_parse_(&a, a_row, &e);
-  assert(nsym && Node_type(nsym) == SymbolShort && strcmp(gnq_tosym(nsym), "sym") == 0);
+  assert(nsym && gnq_type(nsym) == SymbolShort && strcmp(gnq_tosym(nsym), "sym") == 0);
 
   Arena_free(&a);
 }
@@ -596,41 +612,91 @@ void parser_list_test() {
   assert(n && gnq_isnil(n));
 
   n = lisp_parse(&a, "(a)");
-  assert(n && Node_type(n) == Pair);
+  assert(n && gnq_type(n) == Pair);
   Node *nn = gnq_next(&n);
-  assert(nn && Node_type(nn) == SymbolShort && gnq_isnil(n));
+  assert(nn && gnq_type(nn) == SymbolShort && gnq_isnil(n));
 
   n = lisp_parse(&a, "(1 2 3)");
-  assert(n && Node_type(n) == Pair);
+  assert(n && gnq_type(n) == Pair);
   nn = gnq_next(&n);
-  assert(nn && Node_type(nn) == NumberInt && gnq_toint(nn) == 1 && !gnq_isnil(n));
+  assert(nn && gnq_type(nn) == NumberInt && gnq_toint(nn) == 1 && !gnq_isnil(n));
   nn = gnq_next(&n);
-  assert(nn && Node_type(nn) == NumberInt && gnq_toint(nn) == 2 && !gnq_isnil(n));
+  assert(nn && gnq_type(nn) == NumberInt && gnq_toint(nn) == 2 && !gnq_isnil(n));
   nn = gnq_next(&n);
-  assert(nn && Node_type(nn) == NumberInt && gnq_toint(nn) == 3 && gnq_isnil(n));
+  assert(nn && gnq_type(nn) == NumberInt && gnq_toint(nn) == 3 && gnq_isnil(n));
 
   n = lisp_parse(&a, "(1 (2 3))");
-  assert(n && Node_type(n) == Pair);
+  assert(n && gnq_type(n) == Pair);
   nn = gnq_next(&n);
-  assert(nn && Node_type(nn) == NumberInt && gnq_toint(nn) == 1 && !gnq_isnil(n));
+  assert(nn && gnq_type(nn) == NumberInt && gnq_toint(nn) == 1 && !gnq_isnil(n));
   nn = gnq_next(&n);
-  assert(nn && Node_type(nn) == Pair && gnq_isnil(n));
+  assert(nn && gnq_type(nn) == Pair && gnq_isnil(n));
   n = nn;
   nn = gnq_next(&n);
-  assert(nn && Node_type(nn) == NumberInt && gnq_toint(nn) == 2 && !gnq_isnil(n));
+  assert(nn && gnq_type(nn) == NumberInt && gnq_toint(nn) == 2 && !gnq_isnil(n));
   nn = gnq_next(&n);
-  assert(nn && Node_type(nn) == NumberInt && gnq_toint(nn) == 3 && gnq_isnil(n));
+  assert(nn && gnq_type(nn) == NumberInt && gnq_toint(nn) == 3 && gnq_isnil(n));
 
   n = lisp_parse(&a, "(1 () 3.2  gg)");
-  assert(n && Node_type(n) == Pair);
+  assert(n && gnq_type(n) == Pair);
   nn = gnq_next(&n);
-  assert(nn && Node_type(nn) == NumberInt && gnq_toint(nn) == 1 && !gnq_isnil(n));
+  assert(nn && gnq_type(nn) == NumberInt && gnq_toint(nn) == 1 && !gnq_isnil(n));
   nn = gnq_next(&n);
   assert(gnq_isnil(nn) && !gnq_isnil(n));
   nn = gnq_next(&n);
-  assert(nn && Node_type(nn) == NumberFloat && gnq_tofloat(nn) == 3.2 && !gnq_isnil(n));
+  assert(nn && gnq_type(nn) == NumberFloat && gnq_tofloat(nn) == 3.2 && !gnq_isnil(n));
   nn = gnq_next(&n);
-  assert(nn && Node_type(nn) == SymbolShort && strcmp(gnq_tosym(nn), "gg") == 0 && gnq_isnil(n));
+  assert(nn && gnq_type(nn) == SymbolShort && strcmp(gnq_tosym(nn), "gg") == 0 && gnq_isnil(n));
+
+  Arena_free(&a);
+}
+
+bool gnq_equal(Node *a, Node *b) {
+  if (gnq_type(a) != gnq_type(b))
+    return false;
+
+  if (gnq_type(a) == NumberInt)
+    return gnq_toint(a) == gnq_toint(b);
+  if (gnq_type(a) == NumberFloat)
+    return gnq_tofloat(a) == gnq_tofloat(b);
+  if (gnq_type(a) == StringShort || gnq_type(a) == StringLong)
+    return strcmp(gnq_tostring(a), gnq_tostring(b)) == 0;
+  if (gnq_type(a) == SymbolShort || gnq_type(a) == SymbolLong)
+    return strcmp(gnq_tosym(a), gnq_tosym(b)) == 0;
+
+  if (gnq_type(a) == Pair) {
+    while (!gnq_isnil(a) && !gnq_isnil(b))
+      if (!gnq_equal(gnq_next(&a), gnq_next(&b)))
+        return false;
+    return gnq_isnil(a) && gnq_isnil(b);
+  }
+
+  return false;
+}
+
+void parser_lisp_compare() {
+  printf("parser_lisp_compare\n");
+
+  Arena a = Arena_create(256);
+
+  assert(gnq_equal(lisp_parse(&a, "42"), lisp_parse(&a, "42")));
+  assert(!gnq_equal(lisp_parse(&a, "2"), lisp_parse(&a, "4")));
+  assert(gnq_equal(lisp_parse(&a, "4.2"), lisp_parse(&a, "4.2")));
+  assert(!gnq_equal(lisp_parse(&a, "2.0"), lisp_parse(&a, "4.4")));
+  assert(gnq_equal(lisp_parse(&a, "sym"), lisp_parse(&a, "sym")));
+  assert(!gnq_equal(lisp_parse(&a, "sym1"), lisp_parse(&a, "sym4")));
+  assert(gnq_equal(lisp_parse(&a, "\"str\""), lisp_parse(&a, "\"str\"")));
+  assert(!gnq_equal(lisp_parse(&a, "\"str\""), lisp_parse(&a, "\"no_str\"")));
+
+  assert(!gnq_equal(lisp_parse(&a, "42"), lisp_parse(&a, "4.2")));
+  assert(!gnq_equal(lisp_parse(&a, "sym"), lisp_parse(&a, "4.2")));
+  assert(!gnq_equal(lisp_parse(&a, "sym"), lisp_parse(&a, "42")));
+
+  assert(gnq_equal(lisp_parse(&a, "(sym 1 2.2)"), lisp_parse(&a, "(sym 1 2.2)")));
+  assert(!gnq_equal(lisp_parse(&a, "(sym 1 2.2)"), lisp_parse(&a, "(sym 1 2.3)")));
+  assert(!gnq_equal(lisp_parse(&a, "(sym 1 2.2)"), lisp_parse(&a, "(sym 1)")));
+  assert(!gnq_equal(lisp_parse(&a, "(sym 1)"), lisp_parse(&a, "(sym 1 2.2)")));
+  assert(gnq_equal(lisp_parse(&a, "()"), lisp_parse(&a, "")));
 
   Arena_free(&a);
 }
@@ -642,6 +708,7 @@ int main() {
   list_test();
   parser_atom_test();
   parser_list_test();
+  parser_lisp_compare();
 
   printf("ok\n");
   return 0;
