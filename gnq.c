@@ -701,6 +701,57 @@ void parser_lisp_compare() {
   Arena_free(&a);
 }
 
+size_t lisp_str(char *b, size_t s, Node *a) {
+  if (gnq_type(a) == NumberInt)
+    return snprintf(b, s, "%lld", gnq_toint(a));
+  if (gnq_type(a) == NumberFloat)
+    return snprintf(b, s, "%g", gnq_tofloat(a));
+  if (gnq_type(a) == StringShort || gnq_type(a) == StringLong)
+    return snprintf(b, s, "\"%s\"", gnq_tostring(a));
+  if (gnq_type(a) == SymbolShort || gnq_type(a) == SymbolLong)
+    return snprintf(b, s, "%s", gnq_tosym(a));
+
+  if (gnq_type(a) == Pair) {
+    size_t i = snprintf(b, s, "(");
+    while (!gnq_isnil(a)) {
+      if (i > 1)
+        i += snprintf(b + i, s - i, " ");
+      i += lisp_str(b + i, s - i, gnq_next(&a));
+    }
+    i += snprintf(b + i, s - i, ")");
+    return i;
+  }
+
+  return 0;
+}
+
+void parser_lisp_out() {
+  printf("parser_lisp_out\n");
+
+  Arena a = Arena_create(256);
+  char b[256];
+
+  assert(lisp_str(b, 256, lisp_parse(&a, "42")) == 2);
+  assert(strcmp("42", b) == 0);
+  assert(lisp_str(b, 256, lisp_parse(&a, "4.2")) == 3);
+  assert(strcmp("4.2", b) == 0);
+  assert(lisp_str(b, 256, lisp_parse(&a, " \"str\" ")) == 5);
+  assert(strcmp("\"str\"", b) == 0);
+  assert(lisp_str(b, 256, lisp_parse(&a, " symysy")) == 6);
+  assert(strcmp("symysy", b) == 0);
+
+  assert(lisp_str(b, 256, lisp_parse(&a, "(s)")) == 3);
+  assert(strcmp("(s)", b) == 0);
+
+  assert(lisp_str(b, 256, lisp_parse(&a, "(fn 3)")) == 6);
+  assert(strcmp("(fn 3)", b) == 0);
+
+  // assert(lisp_str(b, 256, lisp_parse(&a, " (  fn  ( a   b  ) 3 xxx )")) == 16);
+  // assert(strcmp("(fn (a b) 3 xxx)", b) == 0);
+
+  Arena_free(&a);
+}
+
 int main() {
   assert(sizeof(ptr_size) == sizeof(void *));
 
@@ -709,6 +760,7 @@ int main() {
   parser_atom_test();
   parser_list_test();
   parser_lisp_compare();
+  parser_lisp_out();
 
   printf("ok\n");
   return 0;
