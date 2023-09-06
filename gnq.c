@@ -9,7 +9,6 @@
 typedef uintptr_t ptr_size;
 
 typedef struct Location {
-  const char *file;
   uint16_t line;
   uint16_t column;
 } Location;
@@ -28,6 +27,12 @@ void State_skip(State *st) {
   } else
     ++st->location.column;
   ++st->c;
+}
+void State_skipi(State *st, int i) {
+  while (i > 0) {
+    State_skip(st);
+    i--;
+  }
 }
 
 void skip_whitespace(State *st) {
@@ -490,25 +495,25 @@ void list_test() {
   Arena_free(&a);
 }
 
-Node *lisp_parse_(Arena *a, const char *c, char const **e) {
+Node *lisp_parse_(Arena *a, State *st) {
 
 #define done(x)                                                                                                        \
   if (e)                                                                                                               \
     *e = c;                                                                                                            \
   return (x);
 
-  while (*c && isspace(*c))
-    ++c;
+  while (*st->c && isspace(*st->c))
+    State_skip(st);
 
-  if (*c == '(') {
-    c++;
+  if (*st->c == '(') {
+    State_skip(st);
     Node *list = &nil;
     Node *last = &nil;
-    while (*c && *c != ')') {
-      const char *e = c;
+    while (*st->c && *st->c != ')') {
+      State sub_st = *st;
 
-      Node *sub = lisp_parse_(a, c, &e);
-      if (*e) {
+      Node *sub = lisp_parse_(a, &sub_st);
+      if (*sub_st.c) {
         if (last != &nil) {
           last->cdr.n = gnq_cons(a, sub, &nil);
           last = gnq_cdr(last);
@@ -516,55 +521,58 @@ Node *lisp_parse_(Arena *a, const char *c, char const **e) {
           last = gnq_cons(a, sub, &nil);
           list = last;
         }
-        c = e;
+        *st = sub_st;
       }
-      while (*c && isspace(*c))
-        ++c;
+      while (*st->c && isspace(*st->c))
+        State_skip(st);
     }
 
-    assert(*c && *c == ')');
-    c++;
-    done(list);
+    assert(*st->c && *st->c == ')');
+    State_skip(st);
+    return list;
   }
 
-  if (*c == '"') {
-    char *es = (char *)c;
+  if (*st->c == '"') {
+    const char *start = st->c;
     do {
-      ++es;
-      assert(*es);
-    } while (*es != '"');
-    *es = '\0';
-    Node *ns = gnq_string(a, c + 1);
-    *es = '"';
-    c = es + 1;
-    done(ns);
+      State_skip(st);
+      assert(*st->c);
+    } while (*st->c != '"');
+    *(char *)(st->c) = '\0';
+    Node *ns = gnq_string(a, start + 1);
+    *(char *)(st->c) = '"';
+    State_skip(st);
+    return ns;
   }
 
-  char *ef = (char *)c;
-  double f = strtod(c, &ef);
-  char *ei = (char *)c;
-  int64_t i = strtol(c, &ei, 10);
-  if (ei > c) {
-    c = (ef > ei) ? ef : ei;
-    done((ef > ei) ? gnq_float(a, f) : gnq_int(a, i));
+  char *ef = (char *)st->c;
+  double f = strtod(st->c, &ef);
+  char *ei = (char *)st->c;
+  int64_t i = strtol(st->c, &ei, 10);
+  if (ei > st->c) {
+    State_skipi(st, ((ef > ei) ? ef : ei) - st->c);
+    return ((ef > ei) ? gnq_float(a, f) : gnq_int(a, i));
   }
 
-  char *es = (char *)c;
+  char *es = (char *)st->c;
   while (*es && !isspace(*es) && *es != '(' && *es != ')')
     ++es;
-  if (es > c) {
+  if (es > st->c) {
     char x = *es;
     *es = '\0';
-    Node *s = gnq_sym(a, c);
+    Node *s = gnq_sym(a, st->c);
     *es = x;
-    c = es;
-    done(s);
+    State_skipi(st, es - st->c);
+    return s;
   }
 
   return &nil;
 }
 
-Node *lisp_parse(Arena *a, const char *c) { return lisp_parse_(a, c, NULL); }
+Node *lisp_parse(Arena *a, const char *c) {
+  State st = (State){c, {1, 1}};
+  return lisp_parse_(a, &st);
+}
 
 void parser_atom_test() {
   printf("parser_atom_test\n");
@@ -584,17 +592,17 @@ void parser_atom_test() {
   assert(nsym && gnq_type(nsym) == SymbolShort && strcmp(gnq_tosym(nsym), "sym") == 0);
 
   const char *a_row = "  sym 4 sym";
-  const char *e = a_row;
-  nsym = lisp_parse_(&a, a_row, &e);
+  State st = (State){a_row};
+  nsym = lisp_parse_(&a, &st);
   assert(nsym && gnq_type(nsym) == SymbolShort && strcmp(gnq_tosym(nsym), "sym") == 0);
-  assert(e > a_row);
-  a_row = e;
-  nsym = lisp_parse_(&a, a_row, &e);
+  assert(st.c > a_row);
+  a_row = st.c;
+  nsym = lisp_parse_(&a, &st);
   assert(nsym && gnq_type(nsym) == NumberInt);
   assert(nsym && gnq_type(nsym) == NumberInt && gnq_toint(nsym) == 4);
-  assert(e > a_row);
-  a_row = e;
-  nsym = lisp_parse_(&a, a_row, &e);
+  assert(st.c > a_row);
+  a_row = st.c;
+  nsym = lisp_parse_(&a, &st);
   assert(nsym && gnq_type(nsym) == SymbolShort && strcmp(gnq_tosym(nsym), "sym") == 0);
 
   Arena_free(&a);
@@ -757,6 +765,19 @@ void parser_lisp_out() {
   Arena_free(&a);
 }
 
+Node *gnq_parse(Arena *a, State *s) { return &nil; }
+
+void parser_gnq_test() {
+  printf("parser_gnq_test\n");
+
+  Arena a = Arena_create(256);
+
+  // State s = (State){"42", {0, 0}};
+  // assert(gnq_equal(lisp_parse(&a, "42"), gnq_parse(&a, &s)));
+
+  Arena_free(&a);
+}
+
 int main() {
   assert(sizeof(ptr_size) == sizeof(void *));
 
@@ -766,6 +787,7 @@ int main() {
   parser_list_test();
   parser_lisp_compare();
   parser_lisp_out();
+  parser_gnq_test();
 
   printf("ok\n");
   return 0;
