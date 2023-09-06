@@ -698,6 +698,10 @@ void parser_lisp_compare() {
   assert(gnq_equal(lisp_parse(&a, "()"), lisp_parse(&a, "")));
 
   assert(gnq_equal(lisp_parse(&a, "(fn 1)"), lisp_parse(&a, "(fn 1 )")));
+  assert(gnq_equal(lisp_parse(&a, "(fn (a b c) 1 2)"), lisp_parse(&a, "(fn (a b c) 1 2)")));
+
+  assert(!gnq_equal(lisp_parse(&a, "(fn 1)"), lisp_parse(&a, "(fn 1 1)")));
+  assert(!gnq_equal(lisp_parse(&a, "(fn 1 1 1)"), lisp_parse(&a, "(fn 1 1)")));
 
   Arena_free(&a);
 }
