@@ -495,12 +495,19 @@ void list_test() {
   Arena_free(&a);
 }
 
-Node *lisp_parse_(Arena *a, State *st) {
+Node *gnq_parse_number(Arena *a, State *st) {
+  char *ef = (char *)st->c;
+  double f = strtod(st->c, &ef);
+  char *ei = (char *)st->c;
+  int64_t i = strtol(st->c, &ei, 10);
+  if (ei > st->c) {
+    State_skipi(st, ((ef > ei) ? ef : ei) - st->c);
+    return ((ef > ei) ? gnq_float(a, f) : gnq_int(a, i));
+  }
+  return NULL;
+}
 
-#define done(x)                                                                                                        \
-  if (e)                                                                                                               \
-    *e = c;                                                                                                            \
-  return (x);
+Node *lisp_parse_(Arena *a, State *st) {
 
   while (*st->c && isspace(*st->c))
     State_skip(st);
@@ -545,14 +552,9 @@ Node *lisp_parse_(Arena *a, State *st) {
     return ns;
   }
 
-  char *ef = (char *)st->c;
-  double f = strtod(st->c, &ef);
-  char *ei = (char *)st->c;
-  int64_t i = strtol(st->c, &ei, 10);
-  if (ei > st->c) {
-    State_skipi(st, ((ef > ei) ? ef : ei) - st->c);
-    return ((ef > ei) ? gnq_float(a, f) : gnq_int(a, i));
-  }
+  Node *number = gnq_parse_number(a, st);
+  if (number)
+    return number;
 
   char *es = (char *)st->c;
   while (*es && !isspace(*es) && *es != '(' && *es != ')')
@@ -765,15 +767,21 @@ void parser_lisp_out() {
   Arena_free(&a);
 }
 
-Node *gnq_parse(Arena *a, State *s) { return &nil; }
+Node *gnq_parse(Arena *a, State *st) {
+  Node *number = gnq_parse_number(a, st);
+  if (number)
+    return number;
+
+  return &nil;
+}
 
 void parser_gnq_test() {
   printf("parser_gnq_test\n");
 
   Arena a = Arena_create(256);
 
-  // State s = (State){"42", {0, 0}};
-  // assert(gnq_equal(lisp_parse(&a, "42"), gnq_parse(&a, &s)));
+  State s = (State){"42", {0, 0}};
+  assert(gnq_equal(lisp_parse(&a, "42"), gnq_parse(&a, &s)));
 
   Arena_free(&a);
 }
