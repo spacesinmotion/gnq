@@ -528,6 +528,21 @@ Node *gnq_parse_number(Arena *a, State *st) {
   return NULL;
 }
 
+Node *gnq_parse_id(Arena *a, State *st) {
+  const char *start = st->c;
+  if (isalpha(*st->c) || *st->c == '_') {
+    State_skip(st);
+    while (isalnum(*st->c) || *st->c == '_')
+      State_skip(st);
+    char old = *st->c;
+    *(char *)st->c = '\0';
+    Node *id = gnq_list(a, 2, gnq_sym(a, "id"), gnq_sym(a, start));
+    *(char *)st->c = old;
+    return id;
+  }
+  return NULL;
+}
+
 Node *lisp_parse_(Arena *a, State *st) {
 
   gnq_skip_white(st);
@@ -561,7 +576,6 @@ Node *lisp_parse_(Arena *a, State *st) {
   Node *string = gnq_parse_string(a, st);
   if (string)
     return string;
-
   Node *number = gnq_parse_number(a, st);
   if (number)
     return number;
@@ -785,13 +799,25 @@ Node *gnq_parse(Arena *a, State *st) {
     return atom;
   if ((atom = gnq_parse_number(a, st)))
     return atom;
+  if ((atom = gnq_parse_id(a, st)))
+    return atom;
 
   return &nil;
 }
 
 bool parse_as_(Arena *a, const char *gnq, const char *lisp) {
   State s = (State){gnq, {0, 0}};
-  return gnq_equal(gnq_parse(a, &s), lisp_parse(a, lisp));
+  Node *from_lisp = lisp_parse(a, lisp);
+  Node *from_gnq = gnq_parse(a, &s);
+  if (gnq_equal(from_gnq, from_lisp))
+    return true;
+
+  char b1[256] = {0};
+  lisp_str(b1, sizeof(b1), from_lisp);
+  char b2[256] = {0};
+  lisp_str(b2, sizeof(b2), from_gnq);
+  printf("expect '%s' got '%s'\n", b1, b2);
+  return false;
 }
 
 void parser_gnq_test() {
@@ -804,6 +830,9 @@ void parser_gnq_test() {
   assert(parse_as_(&a, "-4.21b", "-4.21"));
   assert(parse_as_(&a, "\"str\"", "\"str\""));
   assert(parse_as_(&a, "  \"str\"", "\"str\""));
+
+  assert(parse_as_(&a, "var", "(id var)"));
+  assert(parse_as_(&a, "_var2", "(id _var2)"));
 
   Arena_free(&a);
 }
