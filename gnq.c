@@ -507,6 +507,22 @@ Node *gnq_parse_number(Arena *a, State *st) {
   return NULL;
 }
 
+Node *gnq_parse_string(Arena *a, State *st) {
+  if (*st->c == '"') {
+    const char *start = st->c;
+    do {
+      State_skip(st);
+      assert(*st->c);
+    } while (*st->c != '"');
+    *(char *)(st->c) = '\0';
+    Node *ns = gnq_string(a, start + 1);
+    *(char *)(st->c) = '"';
+    State_skip(st);
+    return ns;
+  }
+  return NULL;
+}
+
 Node *lisp_parse_(Arena *a, State *st) {
 
   while (*st->c && isspace(*st->c))
@@ -539,18 +555,9 @@ Node *lisp_parse_(Arena *a, State *st) {
     return list;
   }
 
-  if (*st->c == '"') {
-    const char *start = st->c;
-    do {
-      State_skip(st);
-      assert(*st->c);
-    } while (*st->c != '"');
-    *(char *)(st->c) = '\0';
-    Node *ns = gnq_string(a, start + 1);
-    *(char *)(st->c) = '"';
-    State_skip(st);
-    return ns;
-  }
+  Node *string = gnq_parse_string(a, st);
+  if (string)
+    return string;
 
   Node *number = gnq_parse_number(a, st);
   if (number)
@@ -768,11 +775,19 @@ void parser_lisp_out() {
 }
 
 Node *gnq_parse(Arena *a, State *st) {
-  Node *number = gnq_parse_number(a, st);
-  if (number)
-    return number;
+  Node *atom = NULL;
+  
+  if ((atom = gnq_parse_string(a, st)))
+    return atom;
+  if ((atom = gnq_parse_number(a, st)))
+    return atom;
 
   return &nil;
+}
+
+bool parse_as_(Arena *a, const char *lisp, const char *gnq) {
+  State s = (State){gnq, {0, 0}};
+  return gnq_equal(lisp_parse(a, lisp), gnq_parse(a, &s));
 }
 
 void parser_gnq_test() {
@@ -780,8 +795,10 @@ void parser_gnq_test() {
 
   Arena a = Arena_create(256);
 
-  State s = (State){"42", {0, 0}};
-  assert(gnq_equal(lisp_parse(&a, "42"), gnq_parse(&a, &s)));
+  assert(parse_as_(&a, "42", "42"));
+  assert(parse_as_(&a, "-42", "-42"));
+  assert(parse_as_(&a, "-4.21b", "-4.21"));
+  assert(parse_as_(&a, "\"str\"", "\"str\""));
 
   Arena_free(&a);
 }
