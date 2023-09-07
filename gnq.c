@@ -54,18 +54,6 @@ bool check_op(State *st, const char *op) {
   return false;
 }
 
-typedef struct Program {
-} Program;
-
-typedef struct Module {
-} Module;
-
-typedef struct Expression Expression;
-typedef struct Expression {
-  Expression *o1;
-  Expression *o2;
-} Expression;
-
 enum { ASSOC_NONE = 0, ASSOC_LEFT, ASSOC_RIGHT };
 typedef struct BinOp {
   const char *op;
@@ -113,55 +101,6 @@ BinOp *getop(const char *ch) {
       return ops + i;
   return NULL;
 }
-
-typedef struct ShuntYard {
-  Expression *op_stack[128];
-  int op_stack_size;
-  Expression *val_stack[128];
-  int val_stack_size;
-} ShuntYard;
-
-ShuntYard ShuntYard_create() { return (ShuntYard){.op_stack_size = 0, .val_stack_size = 0}; }
-
-void ShuntYard_push_val(ShuntYard *y, Expression *e) {
-  y->val_stack[y->val_stack_size] = e;
-  y->val_stack_size++;
-}
-
-void ShuntYard_push_op(ShuntYard *y, Expression *e) {
-  y->op_stack[y->op_stack_size] = e;
-  y->op_stack_size++;
-}
-
-void ShuntYard_shunt(ShuntYard *y) {
-  Expression *pop = y->op_stack[y->op_stack_size - 1];
-  y->op_stack_size--;
-
-  assert(y->val_stack_size >= 2);
-  // if (y->val_stack_size < 2)
-  //   FATALX("not enough parameter for binary operation '%s'",
-  //          pop->binop->op->op);
-
-  pop->o2 = y->val_stack[y->val_stack_size - 1];
-  y->val_stack_size--;
-  pop->o1 = y->val_stack[y->val_stack_size - 1];
-  y->val_stack[y->val_stack_size - 1] = pop;
-}
-
-// Expression *Program_parse_bin_operator(Program *p, State *st) {
-//   // if (check_whitespace_for_nl(st))
-//   //   return NULL;
-
-//   for (size_t i = 0; i < sizeof(ops) / sizeof(BinOp); ++i) {
-//     if (check_op(st, ops[i].op)) {
-//       Expression *bin = Program_new_Expression(p, BinaryOperationE,
-//                                                back(st, strlen(ops[i].op)));
-//       bin->binop->op = &ops[i];
-//       return bin;
-//     }
-//   }
-//   return NULL;
-// }
 
 // Expression *Program_parse_unary_operand(Program *p, Module *m, State *st) {
 //   Expression *prefix = NULL;
@@ -224,14 +163,14 @@ void ShuntYard_shunt(ShuntYard *y) {
 //       *st = old;
 //       break;
 //     }
-//     if (eop->binop->op->assoc == ASSOC_RIGHT) {
+//     if (eop->assoc == ASSOC_RIGHT) {
 //       while (yard.op_stack_size > 0 &&
-//              eop->binop->op->prec <
+//              eop->prec <
 //                  yard.op_stack[yard.op_stack_size - 1]->binop->op->prec)
 //         ShuntYard_shunt(&yard);
 //     } else {
 //       while (yard.op_stack_size > 0 &&
-//              eop->binop->op->prec <=
+//              eop->prec <=
 //                  yard.op_stack[yard.op_stack_size - 1]->binop->op->prec)
 //         ShuntYard_shunt(&yard);
 //     }
@@ -553,7 +492,6 @@ Node *lisp_parse_(Arena *a, State *st) {
     Node *last = &nil;
     while (*st->c && *st->c != ')') {
       State sub_st = *st;
-
       Node *sub = lisp_parse_(a, &sub_st);
       if (*sub_st.c) {
         if (last != &nil) {
@@ -563,8 +501,8 @@ Node *lisp_parse_(Arena *a, State *st) {
           last = gnq_cons(a, sub, &nil);
           list = last;
         }
-        *st = sub_st;
       }
+      *st = sub_st;
       gnq_skip_white(st);
     }
 
@@ -788,10 +726,13 @@ void parser_lisp_out() {
   assert(lisp_str(b, 256, lisp_parse(&a, " (  fn  ( a   b  ) 3 xxx )")) == 16);
   assert(strcmp("(fn (a b) 3 xxx)", b) == 0);
 
+  assert(lisp_str(b, 256, lisp_parse(&a, "(+ 1 (* 2 3))")) == 13);
+  assert(strcmp("(+ 1 (* 2 3))", b) == 0);
+
   Arena_free(&a);
 }
 
-Node *gnq_parse(Arena *a, State *st) {
+Node *gnq_parse_unary_operand(Arena *a, State *st) {
   gnq_skip_white(st);
   Node *atom = NULL;
 
@@ -803,6 +744,109 @@ Node *gnq_parse(Arena *a, State *st) {
     return atom;
 
   return &nil;
+}
+
+BinOp *gnq_parse_bin_operator(State *st) {
+  for (size_t i = 0; i < sizeof(ops) / sizeof(BinOp); ++i) {
+    if (check_op(st, ops[i].op))
+      return &ops[i];
+  }
+  return NULL;
+}
+
+typedef struct ShuntYard {
+  BinOp *op_stack[128];
+  int op_stack_size;
+  Node *val_stack[128];
+  int val_stack_size;
+} ShuntYard;
+
+ShuntYard ShuntYard_create() { return (ShuntYard){.op_stack_size = 0, .val_stack_size = 0}; }
+
+void ShuntYard_push_val(ShuntYard *y, Node *e) {
+  y->val_stack[y->val_stack_size] = e;
+  y->val_stack_size++;
+}
+
+void ShuntYard_push_op(ShuntYard *y, BinOp *op) {
+  y->op_stack[y->op_stack_size] = op;
+  y->op_stack_size++;
+}
+
+void ShuntYard_shunt(ShuntYard *y, Arena *a) {
+  BinOp *pop = y->op_stack[y->op_stack_size - 1];
+  y->op_stack_size--;
+
+  assert(y->val_stack_size >= 2);
+
+  Node *o2 = y->val_stack[y->val_stack_size - 1];
+  y->val_stack_size--;
+  Node *o1 = y->val_stack[y->val_stack_size - 1];
+  y->val_stack[y->val_stack_size - 1] = gnq_list(a, 3, gnq_sym(a, pop->op), o1, o2);
+}
+
+Node *gnq_parse(Arena *a, State *st) {
+  const char *cc = st->c;
+  Node *ev = gnq_parse_unary_operand(a, st);
+  if (!ev)
+    return NULL;
+  ShuntYard yard = ShuntYard_create();
+  ShuntYard_push_val(&yard, ev);
+
+  BinOp *op = NULL;
+  for (;;) {
+    gnq_skip_white(st);
+    State old = *st;
+    op = gnq_parse_bin_operator(st);
+    if (!op)
+      break;
+    // printf(" op '%s'\n", op->op);
+    ev = gnq_parse_unary_operand(a, st);
+    if (!ev) {
+      *st = old;
+      break;
+    }
+    if (op->assoc == ASSOC_RIGHT) {
+      while (yard.op_stack_size > 0 && op->prec < yard.op_stack[yard.op_stack_size - 1]->prec)
+        ShuntYard_shunt(&yard, a);
+    } else {
+      while (yard.op_stack_size > 0 && op->prec <= yard.op_stack[yard.op_stack_size - 1]->prec)
+        ShuntYard_shunt(&yard, a);
+    }
+    ShuntYard_push_op(&yard, op);
+    ShuntYard_push_val(&yard, ev);
+  }
+
+  while (yard.op_stack_size > 0)
+    ShuntYard_shunt(&yard, a);
+
+  assert(yard.val_stack_size == 1);
+  // if (yard.val_stack_size != 1)
+  //   FATALX("Expression parsing failed with too many values (%d)", yard.val_stack_size);
+
+  // State old = *st;
+  // if (check_op(st, "?")) {
+  //   Expression *e = Program_new_Expression(p, TernaryOperationE, old.location);
+  //   e->ternop->condition = yard.val_stack[0];
+  //   if (!(e->ternop->if_e = Program_parse_expression(p, m, st)))
+  //     FATAL(&old.location, "expect 1st expression for ternary operation ");
+  //   if (!check_op(st, ":"))
+  //     FATAL(&old.location, "expect ':' for ternary operation");
+  //   if (!(e->ternop->else_e = Program_parse_expression(p, m, st)))
+  //           FATAL(&old.location, "expect 2nd expression for ternary
+  //     operation ");
+  //     if (e->ternop->condition->type == BinaryOperationE &&
+  //         e->ternop->condition->binop->op->prec < 100 - 13) {
+  //       Expression *cond = e->ternop->condition->binop->o2;
+  //       e->ternop->condition->binop->o2 = e;
+  //       TernaryOperation *ternop = e->ternop;
+  //       e = e->ternop->condition;
+  //       ternop->condition = cond;
+  //     }
+  //     return e;
+  // }
+
+  return yard.val_stack[0];
 }
 
 bool parse_as_(Arena *a, const char *gnq, const char *lisp) {
@@ -833,6 +877,9 @@ void parser_gnq_test() {
 
   assert(parse_as_(&a, "var", "(id var)"));
   assert(parse_as_(&a, "_var2", "(id _var2)"));
+
+  assert(parse_as_(&a, "a + 1", "(+ (id a) 1)"));
+  assert(parse_as_(&a, "1 + 2 * 3", "(+ 1 (* 2 3))"));
 
   Arena_free(&a);
 }
