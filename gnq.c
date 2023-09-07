@@ -495,16 +495,9 @@ void list_test() {
   Arena_free(&a);
 }
 
-Node *gnq_parse_number(Arena *a, State *st) {
-  char *ef = (char *)st->c;
-  double f = strtod(st->c, &ef);
-  char *ei = (char *)st->c;
-  int64_t i = strtol(st->c, &ei, 10);
-  if (ei > st->c) {
-    State_skipi(st, ((ef > ei) ? ef : ei) - st->c);
-    return ((ef > ei) ? gnq_float(a, f) : gnq_int(a, i));
-  }
-  return NULL;
+void gnq_skip_white(State *st) {
+  while (*st->c && *st->c != '\n' && isspace(*st->c))
+    State_skip(st);
 }
 
 Node *gnq_parse_string(Arena *a, State *st) {
@@ -523,10 +516,21 @@ Node *gnq_parse_string(Arena *a, State *st) {
   return NULL;
 }
 
+Node *gnq_parse_number(Arena *a, State *st) {
+  char *ef = (char *)st->c;
+  double f = strtod(st->c, &ef);
+  char *ei = (char *)st->c;
+  int64_t i = strtol(st->c, &ei, 10);
+  if (ei > st->c) {
+    State_skipi(st, ((ef > ei) ? ef : ei) - st->c);
+    return ((ef > ei) ? gnq_float(a, f) : gnq_int(a, i));
+  }
+  return NULL;
+}
+
 Node *lisp_parse_(Arena *a, State *st) {
 
-  while (*st->c && isspace(*st->c))
-    State_skip(st);
+  gnq_skip_white(st);
 
   if (*st->c == '(') {
     State_skip(st);
@@ -546,8 +550,7 @@ Node *lisp_parse_(Arena *a, State *st) {
         }
         *st = sub_st;
       }
-      while (*st->c && isspace(*st->c))
-        State_skip(st);
+      gnq_skip_white(st);
     }
 
     assert(*st->c && *st->c == ')');
@@ -775,8 +778,9 @@ void parser_lisp_out() {
 }
 
 Node *gnq_parse(Arena *a, State *st) {
+  gnq_skip_white(st);
   Node *atom = NULL;
-  
+
   if ((atom = gnq_parse_string(a, st)))
     return atom;
   if ((atom = gnq_parse_number(a, st)))
@@ -785,9 +789,9 @@ Node *gnq_parse(Arena *a, State *st) {
   return &nil;
 }
 
-bool parse_as_(Arena *a, const char *lisp, const char *gnq) {
+bool parse_as_(Arena *a, const char *gnq, const char *lisp) {
   State s = (State){gnq, {0, 0}};
-  return gnq_equal(lisp_parse(a, lisp), gnq_parse(a, &s));
+  return gnq_equal(gnq_parse(a, &s), lisp_parse(a, lisp));
 }
 
 void parser_gnq_test() {
@@ -799,6 +803,7 @@ void parser_gnq_test() {
   assert(parse_as_(&a, "-42", "-42"));
   assert(parse_as_(&a, "-4.21b", "-4.21"));
   assert(parse_as_(&a, "\"str\"", "\"str\""));
+  assert(parse_as_(&a, "  \"str\"", "\"str\""));
 
   Arena_free(&a);
 }
