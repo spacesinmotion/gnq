@@ -680,7 +680,11 @@ void parser_lisp_compare() {
 
 size_t lisp_str(char *b, size_t s, Node *a) {
   if (gnq_type(a) == NumberInt)
+#ifdef WIN32
     return snprintf(b, s, "%lld", gnq_toint(a));
+#else
+    return snprintf(b, s, "%ld", gnq_toint(a));
+#endif
   if (gnq_type(a) == NumberFloat)
     return snprintf(b, s, "%g", gnq_tofloat(a));
   if (gnq_type(a) == StringShort || gnq_type(a) == StringLong)
