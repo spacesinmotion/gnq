@@ -54,6 +54,19 @@ bool check_op(State *st, const char *op) {
   return false;
 }
 
+bool check_word(State *st, const char *word) {
+  skip_whitespace(st);
+  State old = *st;
+  while (st->c[0] && *word && *word == st->c[0]) {
+    State_skip(st);
+    ++word;
+  }
+  if (*word == 0 && !isalnum(st->c[0]) && st->c[0] != '_')
+    return true;
+  *st = old;
+  return false;
+}
+
 enum { ASSOC_NONE = 0, ASSOC_LEFT, ASSOC_RIGHT };
 typedef struct BinOp {
   const char *op;
@@ -909,9 +922,16 @@ Node *gnq_parse(Arena *a, State *st) {
     ShuntYard_shunt(&yard, a);
 
   assert(yard.val_stack_size == 1);
-  // if (yard.val_stack_size != 1)
-  //   FATALX("Expression parsing failed with too many values (%d)", yard.val_stack_size);
 
+  if (check_op(st, "?")) {
+    Node *ternary_if = gnq_parse(a, st);
+    assert(ternary_if);
+    bool expect_ternary_colon = check_op(st, ":");
+    assert(expect_ternary_colon);
+    Node *ternary_else = gnq_parse(a, st);
+    assert(ternary_else);
+    yard.val_stack[0] = gnq_list(a, 4, gnq_sym(a, "?:"), yard.val_stack[0], ternary_if, ternary_else);
+  }
   // State old = *st;
   // if (check_op(st, "?")) {
   //   Expression *e = Program_new_Expression(p, TernaryOperationE, old.location);
@@ -955,7 +975,7 @@ bool parse_as_(Arena *a, const char *gnq, const char *lisp) {
 void parser_gnq_test() {
   printf("parser_gnq_test\n");
 
-  Arena a = Arena_create(1024);
+  Arena a = Arena_create(2048);
 
   assert(parse_as_(&a, "42", "42"));
   assert(parse_as_(&a, "-42", "-42"));
@@ -1006,6 +1026,16 @@ void parser_gnq_test() {
 
   assert(parse_as_(&a, "++b()", "(++ (call (id b) ()))"));
   assert(parse_as_(&a, "b()++", "(>++ (call (id b) ()))"));
+
+  assert(parse_as_(&a, "1 ? 2 : 3", "(?: 1 2 3)"));
+  assert(parse_as_(&a, "1 ? 2 + 3 : 4 * 5", "(?: 1 (+ 2 3) (* 4 5))"));
+  assert(parse_as_(&a, "1 + 2 ? 3 : 4", "(?: (+ 1 2) 3 4)"));
+
+  assert((1 ? 2 ? 3 : 4 : 5) == 3);
+  assert((1 ? 0 ? 3 : 4 : 5) == 4);
+  assert((0 ? 0 ? 3 : 4 : 5) == 5);
+  assert((0 ? 1 ? 3 : 4 : 5) == 5);
+  assert(parse_as_(&a, "1 ? 2 ? 3 : 4 : 5", "(?: 1 (?: 2 3 4) 5)"));
 
   Arena_free(&a);
 }
