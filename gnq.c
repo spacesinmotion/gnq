@@ -741,9 +741,11 @@ void parser_lisp_out() {
 
 Node *gnq_parse(Arena *a, State *st);
 
-Node *gnq_parse_suffix_expression(Arena *a, State *st) {
+Node *gnq_parse_suffix_expression(Arena *a, State *st, Node *e) {
   skip_whitespace(st);
   State old = *st;
+
+  Node *suffix = NULL;
   // if (check_whitespace_for_nl(st))
   //   return e;
 
@@ -765,22 +767,19 @@ Node *gnq_parse_suffix_expression(Arena *a, State *st) {
   // }
 
   const char *un_post_ops[] = {">++", ">--"};
-  for (size_t i = 0; i < sizeof(un_post_ops) / sizeof(const char *); ++i) {
+  for (size_t i = 0; !suffix && i < sizeof(un_post_ops) / sizeof(const char *); ++i) {
     if (check_op(st, un_post_ops[i] + 1)) {
-      return gnq_sym(a, un_post_ops[i]);
+      suffix = gnq_list(a, 2, gnq_sym(a, un_post_ops[i]), e);
+      break;
     }
   }
-  // if (check_op(st, "[")) {
-  //   Expression *acc = Program_new_Expression(p, AccessE, old.location);
-  //   acc->access->o = e;
-  //   acc->access->p = Program_parse_expression(p, m, st);
-  //   if (!acc->access->p)
-  //     FATAL(&st->location, "missing '[]' content");
-  //   if (!check_op(st, "]"))
-  //     FATAL(&st->location, "missing closing ']' for subscription '%s'", st->c);
-  //   acc = Program_parse_suffix_expression(p, m, st, acc);
-  //   return acc;
-  // }
+
+  if (!suffix && check_op(st, "[")) {
+    Node *index = gnq_parse(a, st);
+    bool expect_closing_square_brace = check_op(st, "]");
+    assert(expect_closing_square_brace);
+    suffix = gnq_list(a, index ? 3 : 2, gnq_sym(a, "[]"), e, index);
+  }
 
   // if (check_op(st, "(")) {
   //   Expression *call = Program_new_Expression(p, CallE, old.location);
@@ -798,7 +797,14 @@ Node *gnq_parse_suffix_expression(Arena *a, State *st) {
   //   cast->cast->type = Program_parse_declared_type(p, m, st);
   //   return cast;
   // }
-  return NULL;
+
+  if (suffix) {
+    Node *inner_suffix = gnq_parse_suffix_expression(a, st, suffix);
+    if (inner_suffix)
+      suffix = inner_suffix;
+  }
+
+  return suffix;
 }
 
 Node *gnq_parse_unary_operand(Arena *a, State *st) {
@@ -829,9 +835,9 @@ Node *gnq_parse_unary_operand(Arena *a, State *st) {
     unary = gnq_list(a, 2, gnq_sym(a, "BR"), brace);
   }
 
-  Node *suffix = gnq_parse_suffix_expression(a, st);
+  Node *suffix = gnq_parse_suffix_expression(a, st, unary);
   if (suffix)
-    unary = gnq_list(a, 2, suffix, unary);
+    unary = suffix;
 
   return unary ? unary : &nil;
 }
@@ -957,7 +963,7 @@ bool parse_as_(Arena *a, const char *gnq, const char *lisp) {
 void parser_gnq_test() {
   printf("parser_gnq_test\n");
 
-  Arena a = Arena_create(512);
+  Arena a = Arena_create(1024);
 
   assert(parse_as_(&a, "42", "42"));
   assert(parse_as_(&a, "-42", "-42"));
@@ -992,6 +998,13 @@ void parser_gnq_test() {
 
   assert(parse_as_(&a, "a++", "(>++ (id a))"));
   assert(parse_as_(&a, "b--", "(>-- (id b))"));
+
+  assert(parse_as_(&a, "b[1]", "([] (id b) 1)"));
+  assert(parse_as_(&a, "b[1][2]", "([] ([] (id b) 1) 2)"));
+
+  assert(parse_as_(&a, "b[1]++", "(>++ ([] (id b) 1))"));
+  assert(parse_as_(&a, "b++[1]", "([] (>++ (id b)) 1)"));
+  assert(parse_as_(&a, "b++[1]--", "(>-- ([] (>++ (id b)) 1))"));
 
   Arena_free(&a);
 }
