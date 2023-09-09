@@ -41,6 +41,15 @@ void skip_whitespace(State *st) {
     State_skip(st);
 }
 
+bool is_next(State *st, char c) {
+  skip_whitespace(st);
+  if (*st->c == c) {
+    State_skip(st);
+    return true;
+  }
+  return false;
+}
+
 bool check_op(State *st, const char *op) {
   skip_whitespace(st);
   State old = *st;
@@ -736,10 +745,20 @@ void parser_lisp_out() {
   Arena_free(&a);
 }
 
+Node *gnq_parse(Arena *a, State *st);
+
 Node *gnq_parse_unary_operand(Arena *a, State *st) {
   gnq_skip_white(st);
-  Node *atom = NULL;
 
+  if (is_next(st, '(')) {
+    Node *brace = gnq_parse(a, st);
+    assert(brace);
+    bool expect_closing_brace = is_next(st, ')');
+    assert(expect_closing_brace);
+    return gnq_list(a, 2, gnq_sym(a, "BR"), brace);
+  }
+
+  Node *atom = NULL;
   if ((atom = gnq_parse_string(a, st)))
     return atom;
   if ((atom = gnq_parse_number(a, st)))
@@ -888,6 +907,10 @@ void parser_gnq_test() {
   assert(parse_as_(&a, "1 - 2 % 3", "(- 1 (% 2 3))"));
   assert(parse_as_(&a, "1 | 2 & 3", "(| 1 (& 2 3))"));
   assert(parse_as_(&a, "1 || 2 && 3", "(|| 1 (&& 2 3))"));
+
+  assert(parse_as_(&a, "(1 + 2) * 3", "(* (BR (+ 1 2)) 3)"));
+  assert(parse_as_(&a, "1 * (2) * 3", "(* (* 1 (BR 2)) 3)"));
+  assert(parse_as_(&a, "1 * (2 + 3)", "(* 1 (BR (+ 2 3)))"));
 
   Arena_free(&a);
 }
