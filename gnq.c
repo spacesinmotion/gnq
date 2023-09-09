@@ -884,6 +884,10 @@ void parser_gnq_test() {
 
   assert(parse_as_(&a, "a + 1", "(+ (id a) 1)"));
   assert(parse_as_(&a, "1 + 2 * 3", "(+ 1 (* 2 3))"));
+  assert(parse_as_(&a, "1 * 2 + 3", "(+ (* 1 2) 3)"));
+  assert(parse_as_(&a, "1 - 2 % 3", "(- 1 (% 2 3))"));
+  assert(parse_as_(&a, "1 | 2 & 3", "(| 1 (& 2 3))"));
+  assert(parse_as_(&a, "1 || 2 && 3", "(|| 1 (&& 2 3))"));
 
   Arena_free(&a);
 }
