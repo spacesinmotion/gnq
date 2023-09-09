@@ -41,15 +41,6 @@ void skip_whitespace(State *st) {
     State_skip(st);
 }
 
-bool is_next(State *st, char c) {
-  skip_whitespace(st);
-  if (*st->c == c) {
-    State_skip(st);
-    return true;
-  }
-  return false;
-}
-
 bool check_op(State *st, const char *op) {
   skip_whitespace(st);
   State old = *st;
@@ -750,14 +741,6 @@ Node *gnq_parse(Arena *a, State *st);
 Node *gnq_parse_unary_operand(Arena *a, State *st) {
   gnq_skip_white(st);
 
-  if (is_next(st, '(')) {
-    Node *brace = gnq_parse(a, st);
-    assert(brace);
-    bool expect_closing_brace = is_next(st, ')');
-    assert(expect_closing_brace);
-    return gnq_list(a, 2, gnq_sym(a, "BR"), brace);
-  }
-
   Node *atom = NULL;
   if ((atom = gnq_parse_string(a, st)))
     return atom;
@@ -765,6 +748,23 @@ Node *gnq_parse_unary_operand(Arena *a, State *st) {
     return atom;
   if ((atom = gnq_parse_id(a, st)))
     return atom;
+
+  const char *un_pre_ops[] = {"++", "--", "*", "~", "!", "-", "+", "&"};
+  for (size_t i = 0; i < sizeof(un_pre_ops) / sizeof(const char *); ++i) {
+    if (check_op(st, un_pre_ops[i])) {
+      Node *op = gnq_parse_unary_operand(a, st);
+      assert(op);
+      return gnq_list(a, 2, gnq_sym(a, un_pre_ops[i]), op);
+    }
+  }
+
+  if (check_op(st, "(")) {
+    Node *brace = gnq_parse(a, st);
+    assert(brace);
+    bool expect_closing_brace = check_op(st, ")");
+    assert(expect_closing_brace);
+    return gnq_list(a, 2, gnq_sym(a, "BR"), brace);
+  }
 
   return &nil;
 }
@@ -890,7 +890,7 @@ bool parse_as_(Arena *a, const char *gnq, const char *lisp) {
 void parser_gnq_test() {
   printf("parser_gnq_test\n");
 
-  Arena a = Arena_create(256);
+  Arena a = Arena_create(512);
 
   assert(parse_as_(&a, "42", "42"));
   assert(parse_as_(&a, "-42", "-42"));
@@ -910,7 +910,14 @@ void parser_gnq_test() {
 
   assert(parse_as_(&a, "(1 + 2) * 3", "(* (BR (+ 1 2)) 3)"));
   assert(parse_as_(&a, "1 * (2) * 3", "(* (* 1 (BR 2)) 3)"));
-  assert(parse_as_(&a, "1 * (2 + 3)", "(* 1 (BR (+ 2 3)))"));
+  assert(parse_as_(&a, "1 * (2 + c)", "(* 1 (BR (+ 2 (id c))))"));
+
+  assert(parse_as_(&a, "!a", "(! (id a))"));
+  assert(parse_as_(&a, "~a", "(~ (id a))"));
+  assert(parse_as_(&a, "++a", "(++ (id a))"));
+
+  assert(parse_as_(&a, "1 * *c", "(* 1 (* (id c)))"));
+  assert(parse_as_(&a, "!a + *c", "(+ (! (id a)) (* (id c)))"));
 
   Arena_free(&a);
 }
