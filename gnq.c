@@ -749,23 +749,6 @@ Node *gnq_parse_suffix_expression(Arena *a, State *st, Node *e) {
   // if (check_whitespace_for_nl(st))
   //   return e;
 
-  // bool pointer = check_op(st, "->");
-  // if (pointer || check_op(st, ".")) {
-  //   skip_whitespace(st);
-  //   const char *b = st->c;
-  //   if (!check_identifier(st))
-  //     FATAL(&st->location, "missing id for member access");
-  //   const char *member = Program_copy_string(p, be_sv(b, st->c));
-  //   Expression *ma = Program_new_Expression(p, MemberAccessE, old.location);
-  //   ma->member->o = e;
-  //   ma->member->o_type = NULL;
-  //   ma->member->member = (Identifier *)Program_alloc(p, sizeof(Identifier));
-  //   ma->member->member->name = member;
-  //   ma->member->member->type = NULL;
-  //   ma = Program_parse_suffix_expression(p, m, st, ma);
-  //   return ma;
-  // }
-
   const char *un_post_ops[] = {">++", ">--"};
   for (size_t i = 0; !suffix && i < sizeof(un_post_ops) / sizeof(const char *); ++i) {
     if (check_op(st, un_post_ops[i] + 1)) {
@@ -781,15 +764,24 @@ Node *gnq_parse_suffix_expression(Arena *a, State *st, Node *e) {
     suffix = gnq_list(a, index ? 3 : 2, gnq_sym(a, "[]"), e, index);
   }
 
-  // if (check_op(st, "(")) {
-  //   Expression *call = Program_new_Expression(p, CallE, old.location);
-  //   call->call->o = e;
-  //   call->call->p = Program_parse_parameter_list(p, m, st);
-  //   if (!check_op(st, ")"))
-  //     FATAL(&st->location, "unfinished function call, missing ')'");
-  //   call = Program_parse_suffix_expression(p, m, st, call);
-  //   return call;
-  // }
+  if (!suffix && check_op(st, "(")) {
+    Node *arg = &nil;
+    Node *last = NULL;
+    Node *x = NULL;
+    while ((x = gnq_parse(a, st))) {
+      if (!last)
+        arg = last = gnq_cons(a, x, &nil);
+      else {
+        last->cdr.n = gnq_cons(a, x, &nil);
+        last = last->cdr.n;
+      }
+      if (!check_op(st, ","))
+        break;
+    }
+    bool expect_closing_parameter_list = check_op(st, ")");
+    assert(expect_closing_parameter_list);
+    suffix = gnq_list(a, 3, gnq_sym(a, "call"), e, arg);
+  }
 
   // if (check_word(st, "as")) {
   //   Expression *cast = Program_new_Expression(p, AsCast, old.location);
@@ -839,7 +831,7 @@ Node *gnq_parse_unary_operand(Arena *a, State *st) {
   if (suffix)
     unary = suffix;
 
-  return unary ? unary : &nil;
+  return unary;
 }
 
 BinOp *gnq_parse_bin_operator(State *st) {
@@ -1005,6 +997,15 @@ void parser_gnq_test() {
   assert(parse_as_(&a, "b[1]++", "(>++ ([] (id b) 1))"));
   assert(parse_as_(&a, "b++[1]", "([] (>++ (id b)) 1)"));
   assert(parse_as_(&a, "b++[1]--", "(>-- ([] (>++ (id b)) 1))"));
+
+  assert(parse_as_(&a, "b()", "(call (id b) ())"));
+  assert(parse_as_(&a, "b(1)", "(call (id b) (1))"));
+  assert(parse_as_(&a, "b(1, 2, 3)", "(call (id b) (1 2 3))"));
+  assert(parse_as_(&a, "b(1, 2, k[1])", "(call (id b) (1 2 ([] (id k) 1)))"));
+  assert(parse_as_(&a, "b(1)(2)(3)", "(call (call (call (id b) (1)) (2)) (3))"));
+
+  assert(parse_as_(&a, "++b()", "(++ (call (id b) ()))"));
+  assert(parse_as_(&a, "b()++", "(>++ (call (id b) ()))"));
 
   Arena_free(&a);
 }
