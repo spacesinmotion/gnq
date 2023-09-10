@@ -869,7 +869,22 @@ Node *gnq_parse_statement(Arena *a, State *st) {
     bool expect_while_brace_close = check_op(st, ")");
     assert(expect_while_brace_close);
     Node *while_scope = gnq_parse_statement(a, st);
+    assert(while_scope);
     return gnq_list(a, 3, gnq_sym(a, "while"), while_condition, while_scope);
+  }
+
+  if (check_word(st, "do")) {
+    Node *do_while_scope = gnq_parse_statement(a, st);
+    assert(do_while_scope);
+    bool while_in_do_while = check_word(st, "while");
+    assert(while_in_do_while);
+    bool expect_do_while_brace = check_op(st, "(");
+    assert(expect_do_while_brace);
+    Node *while_condition = gnq_parse_expression(a, st);
+    assert(while_condition);
+    bool expect_do_while_brace_close = check_op(st, ")");
+    assert(expect_do_while_brace_close);
+    return gnq_list(a, 3, gnq_sym(a, "dowhile"), do_while_scope, while_condition);
   }
 
   if (check_word(st, "for")) {
@@ -1002,6 +1017,8 @@ void parser_gnq_statements_test() {
   assert(parse_as_(&a, "for (; 2; 3) 4", "(for () 2 3 4)"));
   assert(parse_as_(&a, "for (;; 3) 4", "(for () () 3 4)"));
   assert(parse_as_(&a, "for (;;) 4", "(for () () () 4)"));
+
+  assert(parse_as_(&a, "do 1 while (2)", "(dowhile 1 2)"));
 
   Arena_free(&a);
 }
