@@ -107,6 +107,7 @@ BinOp ops[] = {
     {"^", 100 - 9, ASSOC_LEFT, false},     //
     {"|", 100 - 10, ASSOC_LEFT, false},    //
                                            //
+    {":=", 100 - 14, ASSOC_RIGHT, false},  //
     {"=", 100 - 14, ASSOC_RIGHT, false},   //
 };
 BinOp *getop(const char *ch) {
@@ -715,8 +716,33 @@ Node *gnq_parse_suffix_expression(Arena *a, State *st, Node *e) {
   return suffix;
 }
 
+Node *gnq_parse_statement(Arena *a, State *st);
+
 Node *gnq_parse_unary_operand(Arena *a, State *st) {
   gnq_skip_white(st);
+
+  if (check_word(st, "fn")) {
+    bool expect_lambda_brace = check_op(st, "(");
+    assert(expect_lambda_brace);
+    Node *arg = &nil;
+    Node *last = NULL;
+    Node *x = NULL;
+    while ((x = gnq_parse_expression(a, st))) {
+      if (!last)
+        arg = last = gnq_cons(a, x, &nil);
+      else {
+        last->cdr.n = gnq_cons(a, x, &nil);
+        last = last->cdr.n;
+      }
+      if (!check_op(st, ","))
+        break;
+    }
+    bool expect_closing_parameter_list = check_op(st, ")");
+    assert(expect_closing_parameter_list);
+    Node *lambda_scope = gnq_parse_statement(a, st);
+    assert(lambda_scope);
+    return gnq_list(a, 3, gnq_sym(a, "lambda"), arg, lambda_scope);
+  }
 
   Node *unary = NULL;
   if ((unary = gnq_parse_string(a, st)))
@@ -741,6 +767,44 @@ Node *gnq_parse_unary_operand(Arena *a, State *st) {
     bool expect_closing_brace = check_op(st, ")");
     assert(expect_closing_brace);
     unary = gnq_list(a, 2, gnq_sym(a, "BR"), brace);
+  }
+
+  if (!unary && check_op(st, "{")) {
+    Node *arg = &nil;
+    Node *last = NULL;
+    Node *x = NULL;
+    while ((x = gnq_parse_expression(a, st))) {
+      if (!last)
+        arg = last = gnq_cons(a, x, &nil);
+      else {
+        last->cdr.n = gnq_cons(a, x, &nil);
+        last = last->cdr.n;
+      }
+      if (!check_op(st, ","))
+        break;
+    }
+    bool expect_closing_construction = check_op(st, "}");
+    assert(expect_closing_construction);
+    unary = gnq_cons(a, gnq_sym(a, "{_}"), arg);
+  }
+
+  if (!unary && check_op(st, "[")) {
+    Node *arg = &nil;
+    Node *last = NULL;
+    Node *x = NULL;
+    while ((x = gnq_parse_expression(a, st))) {
+      if (!last)
+        arg = last = gnq_cons(a, x, &nil);
+      else {
+        last->cdr.n = gnq_cons(a, x, &nil);
+        last = last->cdr.n;
+      }
+      if (!check_op(st, ","))
+        break;
+    }
+    bool expect_closing_array = check_op(st, "]");
+    assert(expect_closing_array);
+    unary = gnq_cons(a, gnq_sym(a, "[_]"), arg);
   }
 
   Node *suffix = gnq_parse_suffix_expression(a, st, unary);
@@ -1108,7 +1172,30 @@ void parser_gnq_functions_test() {
   assert(parse_as_(&a, "fn func() {}", "(fn (call (id func) ()) ({}))"));
   assert(parse_as_(&a, "fn func(a) {}", "(fn (call (id func) ((id a))) ({}))"));
   assert(parse_as_(&a, "fn func(a, b, c) {}", "(fn (call (id func) ((id a) (id b) (id c))) ({}))"));
-  assert(parse_as_(&a, "fn func(a) { a+=2 return a }", "(fn (call (id func) ((id a))) ({} (+= (id a) 2) (return (id a))))"));
+  assert(parse_as_(&a, "fn func(a) { a+=2 return a }",
+                   "(fn (call (id func) ((id a))) ({} (+= (id a) 2) (return (id a))))"));
+
+  Arena_free(&a);
+}
+
+void parser_gnq_construction_test() {
+  printf("parser_gnq_construction_test\n");
+
+  Arena a = Arena_create(2048);
+
+  assert(parse_as_(&a, "a := 1", "(:= (id a) 1)"));
+  assert(parse_as_(&a, "a.b := 1", "(:= (. (id a) (id b)) 1)"));
+
+  assert(parse_as_(&a, "a := {}", "(:= (id a) ({_}))"));
+  assert(parse_as_(&a, "a := {1}", "(:= (id a) ({_} 1))"));
+  assert(parse_as_(&a, "a := {1, 2, 3}", "(:= (id a) ({_} 1 2 3))"));
+  assert(parse_as_(&a, "a := {b = 1}", "(:= (id a) ({_} (= (id b) 1)))"));
+
+  assert(parse_as_(&a, "a := []", "(:= (id a) ([_]))"));
+  assert(parse_as_(&a, "a := [1]", "(:= (id a) ([_] 1))"));
+  assert(parse_as_(&a, "a := [1, 2, 3]", "(:= (id a) ([_] 1 2 3))"));
+
+  assert(parse_as_(&a, "a := fn () {}", "(:= (id a) (lambda () ({})))"));
 
   Arena_free(&a);
 }
@@ -1125,6 +1212,7 @@ int main() {
   parser_gnq_expression_test();
   parser_gnq_statements_test();
   parser_gnq_functions_test();
+  parser_gnq_construction_test();
 
   printf("ok\n");
   return 0;
