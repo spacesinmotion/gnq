@@ -1,8 +1,10 @@
 #include <assert.h>
 #include <ctype.h>
+#include <dirent.h>
 #include <inttypes.h>
 #include <stdarg.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -38,7 +40,7 @@ void State_skipi(State *st, int i) {
 
 void skip_whitespace(State *st) {
   State old = *st;
-  while (*st->c && *st->c != '\n' && isspace(*st->c))
+  while (*st->c && /* *st->c != '\n' && */ isspace(*st->c))
     State_skip(st);
 }
 
@@ -1176,6 +1178,60 @@ void parser_gnq_construction_test() {
   Arena_free(&a);
 }
 
+Node *gnq_parse_file(Arena *a, const char *filename) {
+
+  FILE *fp = fopen(filename, "r");
+  if (fp == NULL)
+    return NULL;
+
+  char buffer[1024 * 1024];
+  fread(buffer, 1, sizeof(buffer), fp);
+  fclose(fp);
+
+  State st = (State){buffer, (Location){1, 1}};
+
+  Node *stat = &nil;
+  Node *last = NULL;
+  Node *x = NULL;
+  while ((x = gnq_parse_statement(a, &st))) {
+    if (!last)
+      stat = last = gnq_cons(a, x, &nil);
+    else {
+      last->cdr.n = gnq_cons(a, x, &nil);
+      last = last->cdr.n;
+    }
+  }
+  return gnq_list(a, 3, gnq_sym(a, "file"), gnq_string(a, filename), stat);
+}
+
+void gnq_test_files() {
+  printf("gnq_test_files\n");
+  DIR *d;
+  struct dirent *dir;
+
+  d = opendir("tests");
+  if (d) {
+    while ((dir = readdir(d)) != NULL) {
+      size_t l = strlen(dir->d_name);
+      if (l < 4 || strcmp(&dir->d_name[l - 4], ".gnq") != 0)
+        continue;
+
+      char filename[256];
+      snprintf(filename, sizeof(filename), "tests/%s", dir->d_name);
+      printf(" %s...\n ", filename);
+
+      Arena a = Arena_create(2048);
+
+      Node *ast = gnq_parse_file(&a, filename);
+      char buffer[1045];
+      lisp_str(buffer, sizeof(buffer), ast);
+      printf("%s\n", buffer);
+      Arena_free(&a);
+    }
+    closedir(d);
+  }
+}
+
 int main() {
   assert(sizeof(ptr_size) == sizeof(void *));
 
@@ -1189,6 +1245,8 @@ int main() {
   parser_gnq_statements_test();
   parser_gnq_functions_test();
   parser_gnq_construction_test();
+
+  gnq_test_files();
 
   printf("ok\n");
   return 0;
