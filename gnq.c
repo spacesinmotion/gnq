@@ -1,10 +1,12 @@
 #include <assert.h>
 #include <ctype.h>
 #include <inttypes.h>
+#include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
 
 typedef uintptr_t ptr_size;
 
