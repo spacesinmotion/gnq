@@ -1,0 +1,56 @@
+fn dummy() {
+  return null
+}
+
+fn none_dummy() {
+  return "some static text"
+}
+
+fn main() {
+  printf("conditionsls\n")
+
+  a := 3
+  b := 42
+
+  if (a == 2)
+    b = 42
+
+  ASSERT(b == 42)
+
+  if (b == 42) {
+    b /= 2
+  }
+  ASSERT(b == 21)
+
+  if (b == 42)
+    b *= b
+  else
+    b = b * 3
+
+  b = 21
+  if (b == 42) {
+    b *= b
+  } else if (b != 6) {
+    b = b * 3
+  } else {
+    b = b * 3
+  }
+
+  ASSERT(b == 21 * 3)
+
+  x := 42
+  if (x := dummy())
+    ASSERT(false)
+  else
+    ASSERT(x == null)
+  ASSERT(x == 42)
+
+  if (x := none_dummy())
+    ASSERT(x != null)
+  else
+    ASSERT(false)
+  ASSERT(x == 42)
+
+  printf(" ...ok\n")
+  return 0
+}

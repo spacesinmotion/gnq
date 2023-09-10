@@ -1184,7 +1184,7 @@ Node *gnq_parse_file(Arena *a, const char *filename) {
   if (fp == NULL)
     return NULL;
 
-  char buffer[1024 * 1024];
+  char buffer[1024 * 1024] = {0};
   fread(buffer, 1, sizeof(buffer), fp);
   fclose(fp);
 
@@ -1223,7 +1223,7 @@ void gnq_test_files() {
       Arena a = Arena_create(2048);
 
       Node *ast = gnq_parse_file(&a, filename);
-      char buffer[1045];
+      char buffer[4096];
       lisp_str(buffer, sizeof(buffer), ast);
       printf("%s\n", buffer);
       Arena_free(&a);
