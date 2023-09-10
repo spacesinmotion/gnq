@@ -904,6 +904,24 @@ Node *gnq_parse_statement(Arena *a, State *st) {
                     for_increment ? for_increment : &nil, for_scope);
   }
 
+  if (check_word(st, "case")) {
+    Node *case_condition = gnq_parse_expression(a, st);
+    assert(case_condition);
+    bool expect_colon_after_case = check_op(st, ":");
+    assert(expect_colon_after_case);
+    Node *case_scope = gnq_parse_statement(a, st);
+    assert(case_scope);
+    return gnq_list(a, 3, gnq_sym(a, "case"), case_condition, case_scope);
+  }
+
+  if (check_word(st, "default")) {
+    bool expect_colon_after_default = check_op(st, ":");
+    assert(expect_colon_after_default);
+    Node *default_scope = gnq_parse_statement(a, st);
+    assert(default_scope);
+    return gnq_list(a, 2, gnq_sym(a, "default"), default_scope);
+  }
+
   return gnq_parse_expression(a, st);
 }
 
@@ -1021,6 +1039,9 @@ void parser_gnq_statements_test() {
   assert(parse_as_(&a, "for (;;) 4", "(for () () () 4)"));
 
   assert(parse_as_(&a, "do 1 while (2)", "(dowhile 1 2)"));
+
+  assert(parse_as_(&a, "case 1: 2", "(case 1 2)"));
+  assert(parse_as_(&a, "default: 1", "(default 1)"));
 
   Arena_free(&a);
 }
