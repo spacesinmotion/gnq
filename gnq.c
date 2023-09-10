@@ -7,7 +7,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-
 typedef uintptr_t ptr_size;
 
 typedef struct Location {
@@ -841,6 +840,11 @@ Node *gnq_parse(Arena *a, State *st) {
     return gnq_list(a, e ? 2 : 1, gnq_sym(a, "return"), e);
   }
 
+  if (check_word(st, "break"))
+    return gnq_list(a, 1, gnq_sym(a, "break"));
+  if (check_word(st, "continue"))
+    return gnq_list(a, 1, gnq_sym(a, "continue"));
+
   return gnq_parse_expression(a, st);
 }
 
@@ -941,6 +945,9 @@ void parser_gnq_statements_test() {
 
   assert(parse_as_(&a, "return 42", "(return 42)"));
   assert(parse_as_(&a, "return", "(return)"));
+
+  assert(parse_as_(&a, "break", "(break)"));
+  assert(parse_as_(&a, "continue", "(continue)"));
 
   Arena_free(&a);
 }
