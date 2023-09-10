@@ -956,6 +956,14 @@ Node *gnq_parse_statement(Arena *a, State *st) {
     return gnq_list(a, 3, gnq_sym(a, "switch"), switch_condition, switch_scope);
   }
 
+  if (check_word(st, "fn")) {
+    Node *fn_declaration = gnq_parse_expression(a, st);
+    assert(fn_declaration);
+    Node *fn_scope = gnq_parse_statement(a, st);
+    assert(fn_scope);
+    return gnq_list(a, 3, gnq_sym(a, "fn"), fn_declaration, fn_scope);
+  }
+
   return gnq_parse_expression(a, st);
 }
 
@@ -1092,6 +1100,19 @@ void parser_gnq_statements_test() {
   Arena_free(&a);
 }
 
+void parser_gnq_functions_test() {
+  printf("parser_gnq_functions_test\n");
+
+  Arena a = Arena_create(2048);
+
+  assert(parse_as_(&a, "fn func() {}", "(fn (call (id func) ()) ({}))"));
+  assert(parse_as_(&a, "fn func(a) {}", "(fn (call (id func) ((id a))) ({}))"));
+  assert(parse_as_(&a, "fn func(a, b, c) {}", "(fn (call (id func) ((id a) (id b) (id c))) ({}))"));
+  assert(parse_as_(&a, "fn func(a) { a+=2 return a }", "(fn (call (id func) ((id a))) ({} (+= (id a) 2) (return (id a))))"));
+
+  Arena_free(&a);
+}
+
 int main() {
   assert(sizeof(ptr_size) == sizeof(void *));
 
@@ -1103,6 +1124,7 @@ int main() {
   parser_lisp_out();
   parser_gnq_expression_test();
   parser_gnq_statements_test();
+  parser_gnq_functions_test();
 
   printf("ok\n");
   return 0;
