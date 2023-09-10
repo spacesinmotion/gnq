@@ -834,7 +834,7 @@ Node *gnq_parse_expression(Arena *a, State *st) {
   return yard.val_stack[0];
 }
 
-Node *gnq_parse(Arena *a, State *st) {
+Node *gnq_parse_statement(Arena *a, State *st) {
   if (check_word(st, "return")) {
     Node *e = gnq_parse_expression(a, st);
     return gnq_list(a, e ? 2 : 1, gnq_sym(a, "return"), e);
@@ -845,13 +845,28 @@ Node *gnq_parse(Arena *a, State *st) {
   if (check_word(st, "continue"))
     return gnq_list(a, 1, gnq_sym(a, "continue"));
 
+  if (check_word(st, "if")) {
+    bool expect_if_brace = check_op(st, "(");
+    assert(expect_if_brace);
+    Node *if_condition = gnq_parse_expression(a, st);
+    bool expect_if_brace_close = check_op(st, ")");
+    assert(expect_if_brace_close);
+    assert(if_condition);
+    Node *if_branch = gnq_parse_statement(a, st);
+    if (!check_word(st, "else"))
+      return gnq_list(a, 3, gnq_sym(a, "if"), if_condition, if_branch);
+    Node *else_branch = gnq_parse_statement(a, st);
+    assert(else_branch);
+    return gnq_list(a, 4, gnq_sym(a, "if"), if_condition, if_branch, else_branch);
+  }
+
   return gnq_parse_expression(a, st);
 }
 
 bool parse_as_(Arena *a, const char *gnq, const char *lisp) {
   State s = (State){gnq, {0, 0}};
   Node *from_lisp = lisp_parse(a, lisp);
-  Node *from_gnq = gnq_parse(a, &s);
+  Node *from_gnq = gnq_parse_statement(a, &s);
   if (gnq_equal(from_gnq, from_lisp))
     return true;
 
@@ -948,6 +963,9 @@ void parser_gnq_statements_test() {
 
   assert(parse_as_(&a, "break", "(break)"));
   assert(parse_as_(&a, "continue", "(continue)"));
+
+  assert(parse_as_(&a, "if (1) 2", "(if 1 2)"));
+  assert(parse_as_(&a, "if (0) 1 else 2", "(if 0 1 2)"));
 
   Arena_free(&a);
 }
