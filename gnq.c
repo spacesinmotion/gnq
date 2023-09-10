@@ -752,7 +752,7 @@ void parser_lisp_out() {
   Arena_free(&a);
 }
 
-Node *gnq_parse(Arena *a, State *st);
+Node *gnq_parse_expression(Arena *a, State *st);
 
 Node *gnq_parse_suffix_expression(Arena *a, State *st, Node *e) {
   skip_whitespace(st);
@@ -771,7 +771,7 @@ Node *gnq_parse_suffix_expression(Arena *a, State *st, Node *e) {
   }
 
   if (!suffix && check_op(st, "[")) {
-    Node *index = gnq_parse(a, st);
+    Node *index = gnq_parse_expression(a, st);
     bool expect_closing_square_brace = check_op(st, "]");
     assert(expect_closing_square_brace);
     suffix = gnq_list(a, index ? 3 : 2, gnq_sym(a, "[]"), e, index);
@@ -781,7 +781,7 @@ Node *gnq_parse_suffix_expression(Arena *a, State *st, Node *e) {
     Node *arg = &nil;
     Node *last = NULL;
     Node *x = NULL;
-    while ((x = gnq_parse(a, st))) {
+    while ((x = gnq_parse_expression(a, st))) {
       if (!last)
         arg = last = gnq_cons(a, x, &nil);
       else {
@@ -833,7 +833,7 @@ Node *gnq_parse_unary_operand(Arena *a, State *st) {
   }
 
   if (!unary && check_op(st, "(")) {
-    Node *brace = gnq_parse(a, st);
+    Node *brace = gnq_parse_expression(a, st);
     assert(brace);
     bool expect_closing_brace = check_op(st, ")");
     assert(expect_closing_brace);
@@ -886,7 +886,7 @@ void ShuntYard_shunt(ShuntYard *y, Arena *a) {
   y->val_stack[y->val_stack_size - 1] = gnq_list(a, 3, gnq_sym(a, pop->op), o1, o2);
 }
 
-Node *gnq_parse(Arena *a, State *st) {
+Node *gnq_parse_expression(Arena *a, State *st) {
   const char *cc = st->c;
   Node *ev = gnq_parse_unary_operand(a, st);
   if (!ev)
@@ -924,37 +924,25 @@ Node *gnq_parse(Arena *a, State *st) {
   assert(yard.val_stack_size == 1);
 
   if (check_op(st, "?")) {
-    Node *ternary_if = gnq_parse(a, st);
+    Node *ternary_if = gnq_parse_expression(a, st);
     assert(ternary_if);
     bool expect_ternary_colon = check_op(st, ":");
     assert(expect_ternary_colon);
-    Node *ternary_else = gnq_parse(a, st);
+    Node *ternary_else = gnq_parse_expression(a, st);
     assert(ternary_else);
     yard.val_stack[0] = gnq_list(a, 4, gnq_sym(a, "?:"), yard.val_stack[0], ternary_if, ternary_else);
   }
-  // State old = *st;
-  // if (check_op(st, "?")) {
-  //   Expression *e = Program_new_Expression(p, TernaryOperationE, old.location);
-  //   e->ternop->condition = yard.val_stack[0];
-  //   if (!(e->ternop->if_e = Program_parse_expression(p, m, st)))
-  //     FATAL(&old.location, "expect 1st expression for ternary operation ");
-  //   if (!check_op(st, ":"))
-  //     FATAL(&old.location, "expect ':' for ternary operation");
-  //   if (!(e->ternop->else_e = Program_parse_expression(p, m, st)))
-  //           FATAL(&old.location, "expect 2nd expression for ternary
-  //     operation ");
-  //     if (e->ternop->condition->type == BinaryOperationE &&
-  //         e->ternop->condition->binop->op->prec < 100 - 13) {
-  //       Expression *cond = e->ternop->condition->binop->o2;
-  //       e->ternop->condition->binop->o2 = e;
-  //       TernaryOperation *ternop = e->ternop;
-  //       e = e->ternop->condition;
-  //       ternop->condition = cond;
-  //     }
-  //     return e;
-  // }
 
   return yard.val_stack[0];
+}
+
+Node *gnq_parse(Arena *a, State *st) {
+  if (check_word(st, "return")) {
+    Node *e = gnq_parse_expression(a, st);
+    return gnq_list(a, e ? 2 : 1, gnq_sym(a, "return"), e);
+  }
+
+  return gnq_parse_expression(a, st);
 }
 
 bool parse_as_(Arena *a, const char *gnq, const char *lisp) {
@@ -972,8 +960,8 @@ bool parse_as_(Arena *a, const char *gnq, const char *lisp) {
   return false;
 }
 
-void parser_gnq_test() {
-  printf("parser_gnq_test\n");
+void parser_gnq_expression_test() {
+  printf("parser_gnq_expression_test\n");
 
   Arena a = Arena_create(2048);
 
@@ -1040,6 +1028,17 @@ void parser_gnq_test() {
   Arena_free(&a);
 }
 
+void parser_gnq_statements_test() {
+  printf("parser_gnq_statements_test\n");
+
+  Arena a = Arena_create(2048);
+
+  assert(parse_as_(&a, "return 42", "(return 42)"));
+  assert(parse_as_(&a, "return", "(return)"));
+
+  Arena_free(&a);
+}
+
 int main() {
   assert(sizeof(ptr_size) == sizeof(void *));
 
@@ -1049,7 +1048,8 @@ int main() {
   parser_list_test();
   parser_lisp_compare();
   parser_lisp_out();
-  parser_gnq_test();
+  parser_gnq_expression_test();
+  parser_gnq_statements_test();
 
   printf("ok\n");
   return 0;
