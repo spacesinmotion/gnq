@@ -1011,6 +1011,8 @@ void parser_gnq_statements_test() {
   assert(parse_as_(&a, "if (1) 2", "(if 1 2)"));
   assert(parse_as_(&a, "if (0) 1 else 2", "(if 0 1 2)"));
 
+  assert(parse_as_(&a, "if (0) 1 else if (2) 3", "(if 0 1 (if 2 3))"));
+
   assert(parse_as_(&a, "while (1) 2", "(while 1 2)"));
 
   assert(parse_as_(&a, "for (1; 2; 3) 4", "(for 1 2 3 4)"));
