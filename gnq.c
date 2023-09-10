@@ -727,14 +727,14 @@ Node *gnq_parse_unary_operand(Arena *a, State *st) {
   gnq_skip_white(st);
 
   if (check_word(st, "fn")) {
-    bool expect_lambda_brace = check_op(st, "(");
-    assert(expect_lambda_brace);
+    bool expect_fn_brace = check_op(st, "(");
+    assert(expect_fn_brace);
     Node *arg = gnq_parse_expression_list(a, st);
     bool expect_closing_parameter_list = check_op(st, ")");
     assert(expect_closing_parameter_list);
-    Node *lambda_scope = gnq_parse_statement(a, st);
-    assert(lambda_scope);
-    return gnq_list(a, 3, gnq_sym(a, "lambda"), arg, lambda_scope);
+    Node *fn_scope = gnq_parse_statement(a, st);
+    assert(fn_scope);
+    return gnq_list(a, 3, gnq_sym(a, "fn"), arg, fn_scope);
   }
 
   Node *unary = NULL;
@@ -990,11 +990,18 @@ Node *gnq_parse_statement(Arena *a, State *st) {
   }
 
   if (check_word(st, "fn")) {
-    Node *fn_declaration = gnq_parse_expression(a, st);
-    assert(fn_declaration);
+    skip_whitespace(st);
+    Node *fn_name = gnq_parse_id(a, st);
+    assert(fn_name);
+    bool expect_fn_parameter_brace = check_op(st, "(");
+    assert(expect_fn_parameter_brace);
+    Node *fn_args = gnq_parse_expression_list(a, st);
+    assert(fn_args);
+    bool expect_fn_brace_close = check_op(st, ")");
+    assert(expect_fn_brace_close);
     Node *fn_scope = gnq_parse_statement(a, st);
     assert(fn_scope);
-    return gnq_list(a, 3, gnq_sym(a, "fn"), fn_declaration, fn_scope);
+    return gnq_list(a, 3, gnq_sym(a, ":="), fn_name, gnq_list(a, 3, gnq_sym(a, "fn"), fn_args, fn_scope));
   }
 
   return gnq_parse_expression(a, st);
@@ -1138,11 +1145,11 @@ void parser_gnq_functions_test() {
 
   Arena a = Arena_create(2048);
 
-  assert(parse_as_(&a, "fn func() {}", "(fn (call (id func) ()) ({}))"));
-  assert(parse_as_(&a, "fn func(a) {}", "(fn (call (id func) ((id a))) ({}))"));
-  assert(parse_as_(&a, "fn func(a, b, c) {}", "(fn (call (id func) ((id a) (id b) (id c))) ({}))"));
-  assert(parse_as_(&a, "fn func(a) { a+=2 return a }",
-                   "(fn (call (id func) ((id a))) ({} (+= (id a) 2) (return (id a))))"));
+  assert(parse_as_(&a, "fn func() {}", "(:= (id func) (fn () ({})))"));
+  assert(parse_as_(&a, "fn func(a) {}", "(:= (id func) (fn ((id a)) ({})))"));
+  assert(parse_as_(&a, "fn func(a, b, c) {}", "(:= (id func) (fn ((id a) (id b) (id c)) ({})))"));
+  assert(
+      parse_as_(&a, "fn func(a) { a+=2 return a }", "(:= (id func) (fn ((id a)) ({} (+= (id a) 2) (return (id a)))))"));
 
   Arena_free(&a);
 }
@@ -1164,7 +1171,7 @@ void parser_gnq_construction_test() {
   assert(parse_as_(&a, "a := [1]", "(:= (id a) ([_] 1))"));
   assert(parse_as_(&a, "a := [1, 2, 3]", "(:= (id a) ([_] 1 2 3))"));
 
-  assert(parse_as_(&a, "a := fn () {}", "(:= (id a) (lambda () ({})))"));
+  assert(parse_as_(&a, "a := fn () {}", "(:= (id a) (fn () ({})))"));
 
   Arena_free(&a);
 }
