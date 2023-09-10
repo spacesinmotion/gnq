@@ -78,9 +78,6 @@ BinOp ops[] = {
     {">>=", 100 - 14, ASSOC_RIGHT, false}, //
     {"<<=", 100 - 14, ASSOC_RIGHT, false}, //
                                            //
-    {"->", 100 - 1, ASSOC_LEFT, false},    //
-    {".", 100 - 1, ASSOC_LEFT, false},     //
-                                           //
     {"==", 100 - 7, ASSOC_LEFT, true},     //
     {"!=", 100 - 7, ASSOC_LEFT, true},     //
     {"<=", 100 - 6, ASSOC_LEFT, true},     //
@@ -117,115 +114,6 @@ BinOp *getop(const char *ch) {
       return ops + i;
   return NULL;
 }
-
-// Expression *Program_parse_unary_operand(Program *p, Module *m, State *st) {
-//   Expression *prefix = NULL;
-//   const char *un_pre_ops[] = {"++", "--", "*", "~", "!", "-", "+", "&"};
-//   for (size_t i = 0; i < sizeof(un_pre_ops) / sizeof(const char *); ++i) {
-//     if (check_op(st, un_pre_ops[i])) {
-//       prefix = Program_new_Expression(p, UnaryPrefixE, back(st, i < 2 ? 2 :
-//       1)); prefix->unpre->op = un_pre_ops[i]; break;
-//     }
-//   }
-
-//   Expression *e = NULL;
-//   if (check_op(st, "(")) {
-//     e = Program_new_Expression(p, BraceE, back(st, 1));
-//     e->brace->o = Program_parse_expression(p, m, st);
-//     if (!e->brace->o)
-//       FATAL(&st->location, "missing '(' content");
-//     if (!check_op(st, ")"))
-//       FATAL(&st->location, "missing closing ')'");
-//   } else if ((e = Program_parse_construction(p, m, st))) {
-//     ;
-//   } else if ((e = Program_parse_array_construction(p, m, st))) {
-//     ;
-//   } else if ((e = Program_parse_auto_declaration_(p, m, st))) {
-//     ;
-//   } else
-//     e = Program_parse_atom(p, st);
-
-//   if (!e && prefix)
-//     FATAL(&st->location, "prefix operation without expression '%s'",
-//           prefix->unpre->op);
-//   if (!e)
-//     return NULL;
-
-//   e = Program_parse_suffix_expression(p, m, st, e);
-//   if (prefix) {
-//     prefix->unpre->o = e;
-//     return prefix;
-//   }
-//   return e;
-// }
-
-// Expression *Program_parse_expression(Program *p, Module *m, State *st) {
-//   //   Expression *ev = Program_parse_unary_operand(p, m, st);
-//   //   if (!ev)
-//   //     return NULL;
-//   ShuntYard yard = ShuntYard_create();
-//   //   ShuntYard_push_val(&yard, ev);
-
-//   Expression *eop;
-//   for (;;) {
-//     // if (check_whitespace_for_nl(st))
-//     //   break;
-//     State old = *st;
-//     eop = Program_parse_bin_operator(p, st);
-//     if (!eop)
-//       break;
-//     ev = Program_parse_unary_operand(p, m, st);
-//     if (!ev) {
-//       *st = old;
-//       break;
-//     }
-//     if (eop->assoc == ASSOC_RIGHT) {
-//       while (yard.op_stack_size > 0 &&
-//              eop->prec <
-//                  yard.op_stack[yard.op_stack_size - 1]->binop->op->prec)
-//         ShuntYard_shunt(&yard);
-//     } else {
-//       while (yard.op_stack_size > 0 &&
-//              eop->prec <=
-//                  yard.op_stack[yard.op_stack_size - 1]->binop->op->prec)
-//         ShuntYard_shunt(&yard);
-//     }
-//     ShuntYard_push_op(&yard, eop);
-//     ShuntYard_push_val(&yard, ev);
-//   }
-
-//   //   while (yard.op_stack_size > 0) {
-//   //     ShuntYard_shunt(&yard);
-//   //   }
-//   //   if (yard.val_stack_size != 1)
-//   //     FATALX("Expression parsing failed with too many values (%d)",
-//   //            yard.val_stack_size);
-
-//   //   State old = *st;
-//   //   if (check_op(st, "?")) {
-//   //     Expression *e = Program_new_Expression(p, TernaryOperationE,
-//   //     old.location); e->ternop->condition = yard.val_stack[0]; if
-//   //     (!(e->ternop->if_e = Program_parse_expression(p, m, st)))
-//   //       FATAL(&old.location, "expect 1st expression for ternary
-//   operation");
-//   //     if (!check_op(st, ":"))
-//   //       FATAL(&old.location, "expect ':' for ternary operation");
-//   //     if (!(e->ternop->else_e = Program_parse_expression(p, m, st)))
-//   //       FATAL(&old.location, "expect 2nd expression for ternary
-//   operation");
-//   //     if (e->ternop->condition->type == BinaryOperationE &&
-//   //         e->ternop->condition->binop->op->prec < 100 - 13) {
-//   //       Expression *cond = e->ternop->condition->binop->o2;
-//   //       e->ternop->condition->binop->o2 = e;
-//   //       TernaryOperation *ternop = e->ternop;
-//   //       e = e->ternop->condition;
-//   //       ternop->condition = cond;
-//   //     }
-//   //     return e;
-//   //   }
-
-//   //   return yard.val_stack[0];
-// }
 
 typedef struct Node Node;
 
@@ -770,6 +658,15 @@ Node *gnq_parse_suffix_expression(Arena *a, State *st, Node *e) {
     }
   }
 
+  const char *member_access[] = {"->", "."};
+  for (size_t i = 0; !suffix && i < sizeof(member_access) / sizeof(const char *); ++i) {
+    if (check_op(st, member_access[i])) {
+      Node *member = gnq_parse_id(a, st);
+      assert(member);
+      suffix = gnq_list(a, 3, gnq_sym(a, member_access[i]), e, member);
+    }
+  }
+
   if (!suffix && check_op(st, "[")) {
     Node *index = gnq_parse_expression(a, st);
     bool expect_closing_square_brace = check_op(st, "]");
@@ -1011,6 +908,13 @@ void parser_gnq_expression_test() {
   assert(parse_as_(&a, "b(1, 2, 3)", "(call (id b) (1 2 3))"));
   assert(parse_as_(&a, "b(1, 2, k[1])", "(call (id b) (1 2 ([] (id k) 1)))"));
   assert(parse_as_(&a, "b(1)(2)(3)", "(call (call (call (id b) (1)) (2)) (3))"));
+
+  assert(parse_as_(&a, "a.b + c", "(+ (. (id a) (id b)) (id c))"));
+  assert(parse_as_(&a, "a + b.c", "(+ (id a) (. (id b) (id c)))"));
+
+  assert(parse_as_(&a, "a + b()", "(+ (id a) (call (id b) ()))"));
+  assert(parse_as_(&a, "a.b()", "(call (. (id a) (id b)) ())"));
+  assert(parse_as_(&a, "a.b->c()", "(call (-> (. (id a) (id b)) (id c)) ())"));
 
   assert(parse_as_(&a, "++b()", "(++ (call (id b) ()))"));
   assert(parse_as_(&a, "b()++", "(>++ (call (id b) ()))"));
