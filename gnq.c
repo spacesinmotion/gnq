@@ -849,15 +849,44 @@ Node *gnq_parse_statement(Arena *a, State *st) {
     bool expect_if_brace = check_op(st, "(");
     assert(expect_if_brace);
     Node *if_condition = gnq_parse_expression(a, st);
+    assert(if_condition);
     bool expect_if_brace_close = check_op(st, ")");
     assert(expect_if_brace_close);
-    assert(if_condition);
     Node *if_branch = gnq_parse_statement(a, st);
+    assert(if_branch);
     if (!check_word(st, "else"))
       return gnq_list(a, 3, gnq_sym(a, "if"), if_condition, if_branch);
     Node *else_branch = gnq_parse_statement(a, st);
     assert(else_branch);
     return gnq_list(a, 4, gnq_sym(a, "if"), if_condition, if_branch, else_branch);
+  }
+
+  if (check_word(st, "while")) {
+    bool expect_while_brace = check_op(st, "(");
+    assert(expect_while_brace);
+    Node *while_condition = gnq_parse_expression(a, st);
+    assert(while_condition);
+    bool expect_while_brace_close = check_op(st, ")");
+    assert(expect_while_brace_close);
+    Node *while_scope = gnq_parse_statement(a, st);
+    return gnq_list(a, 3, gnq_sym(a, "while"), while_condition, while_scope);
+  }
+
+  if (check_word(st, "for")) {
+    bool expect_for_brace = check_op(st, "(");
+    assert(expect_for_brace);
+    Node *for_init = gnq_parse_expression(a, st);
+    bool expect_for_init_break = check_op(st, ";");
+    assert(expect_for_init_break);
+    Node *for_condition = gnq_parse_expression(a, st);
+    bool expect_for_condition_break = check_op(st, ";");
+    assert(expect_for_condition_break);
+    Node *for_increment = gnq_parse_expression(a, st);
+    bool expect_for_brace_close = check_op(st, ")");
+    assert(expect_for_init_break);
+    Node *for_scope = gnq_parse_statement(a, st);
+    return gnq_list(a, 5, gnq_sym(a, "for"), for_init ? for_init : &nil, for_condition ? for_condition : &nil,
+                    for_increment ? for_increment : &nil, for_scope);
   }
 
   return gnq_parse_expression(a, st);
@@ -966,6 +995,13 @@ void parser_gnq_statements_test() {
 
   assert(parse_as_(&a, "if (1) 2", "(if 1 2)"));
   assert(parse_as_(&a, "if (0) 1 else 2", "(if 0 1 2)"));
+
+  assert(parse_as_(&a, "while (1) 2", "(while 1 2)"));
+
+  assert(parse_as_(&a, "for (1; 2; 3) 4", "(for 1 2 3 4)"));
+  assert(parse_as_(&a, "for (; 2; 3) 4", "(for () 2 3 4)"));
+  assert(parse_as_(&a, "for (;; 3) 4", "(for () () 3 4)"));
+  assert(parse_as_(&a, "for (;;) 4", "(for () () () 4)"));
 
   Arena_free(&a);
 }
