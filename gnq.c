@@ -649,6 +649,23 @@ void parser_lisp_out() {
 
 Node *gnq_parse_expression(Arena *a, State *st);
 
+Node *gnq_parse_expression_list(Arena *a, State *st) {
+  Node *arg = &nil;
+  Node *last = NULL;
+  Node *x = NULL;
+  while ((x = gnq_parse_expression(a, st))) {
+    if (!last)
+      arg = last = gnq_cons(a, x, &nil);
+    else {
+      last->cdr.n = gnq_cons(a, x, &nil);
+      last = last->cdr.n;
+    }
+    if (!check_op(st, ","))
+      break;
+  }
+  return arg;
+}
+
 Node *gnq_parse_suffix_expression(Arena *a, State *st, Node *e) {
   skip_whitespace(st);
   State old = *st;
@@ -682,19 +699,7 @@ Node *gnq_parse_suffix_expression(Arena *a, State *st, Node *e) {
   }
 
   if (!suffix && check_op(st, "(")) {
-    Node *arg = &nil;
-    Node *last = NULL;
-    Node *x = NULL;
-    while ((x = gnq_parse_expression(a, st))) {
-      if (!last)
-        arg = last = gnq_cons(a, x, &nil);
-      else {
-        last->cdr.n = gnq_cons(a, x, &nil);
-        last = last->cdr.n;
-      }
-      if (!check_op(st, ","))
-        break;
-    }
+    Node *arg = gnq_parse_expression_list(a, st);
     bool expect_closing_parameter_list = check_op(st, ")");
     assert(expect_closing_parameter_list);
     suffix = gnq_list(a, 3, gnq_sym(a, "call"), e, arg);
@@ -724,19 +729,7 @@ Node *gnq_parse_unary_operand(Arena *a, State *st) {
   if (check_word(st, "fn")) {
     bool expect_lambda_brace = check_op(st, "(");
     assert(expect_lambda_brace);
-    Node *arg = &nil;
-    Node *last = NULL;
-    Node *x = NULL;
-    while ((x = gnq_parse_expression(a, st))) {
-      if (!last)
-        arg = last = gnq_cons(a, x, &nil);
-      else {
-        last->cdr.n = gnq_cons(a, x, &nil);
-        last = last->cdr.n;
-      }
-      if (!check_op(st, ","))
-        break;
-    }
+    Node *arg = gnq_parse_expression_list(a, st);
     bool expect_closing_parameter_list = check_op(st, ")");
     assert(expect_closing_parameter_list);
     Node *lambda_scope = gnq_parse_statement(a, st);
@@ -770,38 +763,14 @@ Node *gnq_parse_unary_operand(Arena *a, State *st) {
   }
 
   if (!unary && check_op(st, "{")) {
-    Node *arg = &nil;
-    Node *last = NULL;
-    Node *x = NULL;
-    while ((x = gnq_parse_expression(a, st))) {
-      if (!last)
-        arg = last = gnq_cons(a, x, &nil);
-      else {
-        last->cdr.n = gnq_cons(a, x, &nil);
-        last = last->cdr.n;
-      }
-      if (!check_op(st, ","))
-        break;
-    }
+    Node *arg = gnq_parse_expression_list(a, st);
     bool expect_closing_construction = check_op(st, "}");
     assert(expect_closing_construction);
     unary = gnq_cons(a, gnq_sym(a, "{_}"), arg);
   }
 
   if (!unary && check_op(st, "[")) {
-    Node *arg = &nil;
-    Node *last = NULL;
-    Node *x = NULL;
-    while ((x = gnq_parse_expression(a, st))) {
-      if (!last)
-        arg = last = gnq_cons(a, x, &nil);
-      else {
-        last->cdr.n = gnq_cons(a, x, &nil);
-        last = last->cdr.n;
-      }
-      if (!check_op(st, ","))
-        break;
-    }
+    Node *arg = gnq_parse_expression_list(a, st);
     bool expect_closing_array = check_op(st, "]");
     assert(expect_closing_array);
     unary = gnq_cons(a, gnq_sym(a, "[_]"), arg);
