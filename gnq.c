@@ -528,6 +528,9 @@ void parser_list_test() {
 }
 
 bool gnq_equal(Node *a, Node *b) {
+  assert(a);
+  assert(b);
+
   if (gnq_type(a) != gnq_type(b))
     return false;
 
@@ -584,6 +587,8 @@ void parser_lisp_compare() {
 }
 
 size_t lisp_str(char *b, size_t s, Node *a) {
+  assert(a);
+
   if (gnq_type(a) == NumberInt)
 #ifdef WIN32
     return snprintf(b, s, "%lld", gnq_toint(a));
@@ -835,6 +840,23 @@ Node *gnq_parse_expression(Arena *a, State *st) {
 }
 
 Node *gnq_parse_statement(Arena *a, State *st) {
+  if (check_op(st, "{")) {
+    Node *stat = &nil;
+    Node *last = NULL;
+    Node *x = NULL;
+    while ((x = gnq_parse_statement(a, st))) {
+      if (!last)
+        stat = last = gnq_cons(a, x, &nil);
+      else {
+        last->cdr.n = gnq_cons(a, x, &nil);
+        last = last->cdr.n;
+      }
+    }
+    bool expect_closing_scope = check_op(st, "}");
+    assert(expect_closing_scope);
+    return gnq_cons(a, gnq_sym(a, "{}"), stat);
+  }
+
   if (check_word(st, "return")) {
     Node *e = gnq_parse_expression(a, st);
     return gnq_list(a, e ? 2 : 1, gnq_sym(a, "return"), e);
@@ -1055,6 +1077,17 @@ void parser_gnq_statements_test() {
   assert(parse_as_(&a, "case 1: 2", "(case 1 2)"));
   assert(parse_as_(&a, "default: 1", "(default 1)"));
   assert(parse_as_(&a, "switch (1) 2", "(switch 1 2)"));
+
+  assert(parse_as_(&a, "{}", "({})"));
+  assert(parse_as_(&a, "{1}", "({} 1)"));
+  assert(parse_as_(&a, "{1 2}", "({} 1 2)"));
+  assert(parse_as_(&a, "{1+2}", "({} (+ 1 2))"));
+  assert(parse_as_(&a, "{1+2 3 4}", "({} (+ 1 2) 3 4)"));
+
+  assert(parse_as_(&a, "if (0) { 1 2 } else { 3 4 }", "(if 0 ({} 1 2) ({} 3 4))"));
+  assert(parse_as_(&a, "while (0) { 1 2 }", "(while 0 ({} 1 2))"));
+  assert(parse_as_(&a, "for (;;) { 1 2 }", "(for () () () ({} 1 2))"));
+  assert(parse_as_(&a, "do { 1 2 } while (3)", "(dowhile ({} 1 2) 3)"));
 
   Arena_free(&a);
 }
