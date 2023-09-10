@@ -922,6 +922,18 @@ Node *gnq_parse_statement(Arena *a, State *st) {
     return gnq_list(a, 2, gnq_sym(a, "default"), default_scope);
   }
 
+  if (check_word(st, "switch")) {
+    bool expect_switch_brace = check_op(st, "(");
+    assert(expect_switch_brace);
+    Node *switch_condition = gnq_parse_expression(a, st);
+    assert(switch_condition);
+    bool expect_switch_brace_close = check_op(st, ")");
+    assert(expect_switch_brace_close);
+    Node *switch_scope = gnq_parse_statement(a, st);
+    assert(switch_scope);
+    return gnq_list(a, 3, gnq_sym(a, "switch"), switch_condition, switch_scope);
+  }
+
   return gnq_parse_expression(a, st);
 }
 
@@ -1042,6 +1054,7 @@ void parser_gnq_statements_test() {
 
   assert(parse_as_(&a, "case 1: 2", "(case 1 2)"));
   assert(parse_as_(&a, "default: 1", "(default 1)"));
+  assert(parse_as_(&a, "switch (1) 2", "(switch 1 2)"));
 
   Arena_free(&a);
 }
