@@ -9,6 +9,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include </home/marco/Downloads/v/thirdparty/tcc/include/libtcc.h>
+
 typedef uintptr_t ptr_size;
 
 typedef struct Location {
@@ -1178,6 +1180,60 @@ void parser_gnq_construction_test() {
   Arena_free(&a);
 }
 
+Node *gnq_parse_all(Arena *a, State *st) {
+  Node *stat = &nil;
+  Node *last = NULL;
+  Node *x = NULL;
+  while ((x = gnq_parse_statement(a, st))) {
+    if (!last)
+      stat = last = gnq_cons(a, x, &nil);
+    else {
+      last->cdr.n = gnq_cons(a, x, &nil);
+      last = last->cdr.n;
+    }
+  }
+  return stat;
+}
+
+void some_func(int v, const char *t) { printf("- %d '%s'\n", v, t); }
+
+void execute_c(const char *code, int argc, char **argv) {
+  TCCState *tcc = tcc_new();
+  tcc_set_output_type(tcc, TCC_OUTPUT_MEMORY);
+  // tcc_add_include_path(tcc, "/home/marco/Downloads/v/thirdparty/tcc/lib/tcc/include");
+  tcc_set_lib_path(tcc, "/home/marco/Downloads/v/thirdparty/tcc/lib/tcc");
+
+  tcc_add_symbol(tcc, "some_func", some_func);
+  tcc_compile_string(tcc, code);
+  tcc_run(tcc, argc, argv);
+
+  tcc_delete(tcc);
+}
+
+void gnq_eval_test() {
+  printf("gnq_eval_test\n");
+
+  Arena a = Arena_create(2048);
+
+  Node *m = gnq_parse_all(&a, &(State){"fn main() { printf(\"hallo\") }", 1, 1});
+  assert(m);
+
+  char *args[] = {"xxx", "yyy", "zzz"};
+  execute_c("void some_func(int, char*);"
+            "void check_func(int a, char* b){"
+            "  if (a<0) return; "
+            "  some_func(a,b);"
+            "  check_func(a-1,b); "
+            "}"
+            "int main(int argc, char**argv) { "
+            "  for(int i=0; i<argc; ++i)"
+            "    check_func(i, argv[i]);"
+            "}",
+            3, args);
+
+  Arena_free(&a);
+}
+
 Node *gnq_parse_file(Arena *a, const char *filename) {
 
   FILE *fp = fopen(filename, "r");
@@ -1190,17 +1246,7 @@ Node *gnq_parse_file(Arena *a, const char *filename) {
 
   State st = (State){buffer, (Location){1, 1}};
 
-  Node *stat = &nil;
-  Node *last = NULL;
-  Node *x = NULL;
-  while ((x = gnq_parse_statement(a, &st))) {
-    if (!last)
-      stat = last = gnq_cons(a, x, &nil);
-    else {
-      last->cdr.n = gnq_cons(a, x, &nil);
-      last = last->cdr.n;
-    }
-  }
+  Node *stat = gnq_parse_all(a, &st);
   return gnq_list(a, 3, gnq_sym(a, "file"), gnq_string(a, filename), stat);
 }
 
@@ -1218,15 +1264,14 @@ void gnq_test_files() {
 
       char filename[256];
       snprintf(filename, sizeof(filename), "tests/%s", dir->d_name);
-      printf(" %s...\n ", filename);
-
+      printf(" %s...", filename);
       Arena a = Arena_create(2048);
-
       Node *ast = gnq_parse_file(&a, filename);
-      char buffer[4096];
-      lisp_str(buffer, sizeof(buffer), ast);
-      printf("%s\n", buffer);
+      // char buffer[4096];
+      // lisp_str(buffer, sizeof(buffer), ast);
+      // printf("%s\n", buffer);
       Arena_free(&a);
+      printf("ok\n");
     }
     closedir(d);
   }
@@ -1245,6 +1290,7 @@ int main() {
   parser_gnq_statements_test();
   parser_gnq_functions_test();
   parser_gnq_construction_test();
+  gnq_eval_test();
 
   gnq_test_files();
 
