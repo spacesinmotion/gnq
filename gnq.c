@@ -1200,14 +1200,27 @@ void some_func(int v, const char *t) { printf("- %d '%s'\n", v, t); }
 void execute_c(const char *code, int argc, char **argv) {
   TCCState *tcc = tcc_new();
   tcc_set_output_type(tcc, TCC_OUTPUT_MEMORY);
-  // tcc_add_include_path(tcc, "/home/marco/Downloads/v/thirdparty/tcc/lib/tcc/include");
-  tcc_set_lib_path(tcc, "/home/marco/Downloads/v/thirdparty/tcc/lib/tcc");
+  tcc_add_include_path(tcc, "/usr/lib/tcc/include");
+  tcc_set_lib_path(tcc, "/usr/lib/tcc/");
 
   tcc_add_symbol(tcc, "some_func", some_func);
   tcc_compile_string(tcc, code);
   tcc_run(tcc, argc, argv);
 
   tcc_delete(tcc);
+}
+
+size_t gnq_write_c(char *buffer, size_t l, Node *n) {}
+
+void gnq_deduce_types_test() {
+  printf("gnq_deduce_types_test\n");
+
+  Arena a = Arena_create(2048);
+
+  Node *m = gnq_parse_all(&a, &(State){"fn func() { }", 1, 1});
+  assert(m);
+
+  Arena_free(&a);
 }
 
 void gnq_eval_test() {
@@ -1291,6 +1304,7 @@ int main() {
   parser_gnq_functions_test();
   parser_gnq_construction_test();
   gnq_eval_test();
+  gnq_deduce_types_test();
 
   gnq_test_files();
 
