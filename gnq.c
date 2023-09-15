@@ -9,7 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include </home/marco/Downloads/v/thirdparty/tcc/include/libtcc.h>
+#include "libtcc/libtcc.h"
 
 typedef uintptr_t ptr_size;
 
@@ -1268,6 +1268,7 @@ void gnq_test_files() {
   DIR *d;
   struct dirent *dir;
 
+#ifndef _WIN32
   d = opendir("tests");
   if (d) {
     while ((dir = readdir(d)) != NULL) {
@@ -1288,6 +1289,7 @@ void gnq_test_files() {
     }
     closedir(d);
   }
+#endif
 }
 
 int main() {
