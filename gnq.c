@@ -9,7 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "libtcc/libtcc.h"
+#include <libtcc.h>
 
 typedef uintptr_t ptr_size;
 
