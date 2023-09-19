@@ -1308,15 +1308,16 @@ Node *gnq_deduce_types(Arena *a, TypeStack *ts, Node *n) {
     return &str;
 
   if (gnq_type(n) == Pair) {
+    Node *head = n;
     Node *sym = gnq_next(&n);
     assert(gnq_is_sym(sym));
     const char *syms = gnq_tosym(sym);
     if (strcmp(syms, "id") == 0) {
       Node *var = gnq_next(&n);
       assert(gnq_is_sym(var));
-      Node *type_n = TypeStack_find(ts, gnq_tosym(var));
-      assert(type_n);
-      return type_n;
+      Node *type_of_id = TypeStack_find(ts, gnq_tosym(var));
+      assert(type_of_id);
+      return type_of_id;
     }
 
     if (strcmp(syms, ":=") == 0) {
@@ -1340,6 +1341,13 @@ Node *gnq_deduce_types(Arena *a, TypeStack *ts, Node *n) {
         gnq_deduce_types(a, ts, gnq_next(&n));
       TypeStack_revert(ts, te_state);
       return &nil;
+    }
+    if (strcmp(syms, "[_]") == 0) {
+      // TODO store all array types to get them unique pointers
+      Node *sub = &nil;
+      while (!gnq_isnil(n))
+        sub = gnq_deduce_types(a, ts, gnq_next(&n));
+      return gnq_list(a, gnq_isnil(sub) ? 1 : 2, gnq_car(head), sub);
     }
 
     if (strcmp(syms, "break") == 0 || strcmp(syms, "continue") == 0)
@@ -1417,6 +1425,10 @@ Node *gnq_deduce_types(Arena *a, TypeStack *ts, Node *n) {
       assert(switch_scope && !gnq_isnil(switch_scope));
       gnq_deduce_types(a, ts, switch_scope);
       return &nil;
+    }
+
+    if (strcmp(syms, "fn") == 0) {
+      return head;
     }
 
     const BinOp *op = NULL;
@@ -1497,6 +1509,14 @@ void gnq_deduce_types_test() {
   assert(deduce_as_(&a, "case 1: 2", "()"));
   assert(deduce_as_(&a, "default: 3", "()"));
   assert(deduce_as_(&a, "switch (1) 2", "()"));
+
+  assert(deduce_as_(&a, "a := []", "([_])"));
+  assert(deduce_as_(&a, "a := [1]", "([_] i32)"));
+  assert(deduce_as_(&a, "a := [[1]]", "([_] ([_] i32))"));
+
+  assert(deduce_as_(&a, "a := fn() {}", "(fn () ({}))"));
+  assert(deduce_as_(&a, "fn a() {}", "(fn () ({}))"));
+  assert(deduce_as_(&a, "fn a() {} a", "(fn () ({}))"));
 
   Arena_free(&a);
 }
