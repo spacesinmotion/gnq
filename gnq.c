@@ -166,9 +166,15 @@ typedef struct Arena {
   Node *memory;
   size_t len;
   size_t cap;
+
+  Node *arrays;
 } Arena;
 
-Arena Arena_create(size_t nb_nodes) { return (Arena){(Node *)malloc(nb_nodes * sizeof(Node)), 0, nb_nodes}; }
+Node nil = (Node){NULL, NULL};
+Node *SYM_ARR = &(Node){.car = {.t = SymbolShort}, .cdr = {.ss = "[_]"}};
+Node *SYM_STRUCT = &(Node){.car = {.t = SymbolShort}, .cdr = {.ss = "{_}"}};
+
+Arena Arena_create(size_t nb_nodes) { return (Arena){(Node *)malloc(nb_nodes * sizeof(Node)), 0, nb_nodes, &nil}; }
 
 void Arena_free(Arena *a) {
   free(a->memory);
@@ -265,7 +271,6 @@ Node *gnq_cdr(Node *n) {
   return n->cdr.n;
 }
 
-Node nil = (Node){NULL, NULL};
 bool gnq_isnil(Node *n) { return n == &nil; }
 
 Node *gnq_list(Arena *a, int count, ...) {
@@ -286,6 +291,22 @@ Node *gnq_next(Node **list) {
   Node *n = gnq_car(*list);
   *list = gnq_cdr(*list);
   return n;
+}
+
+Node *gnq_create_array_type_for(Arena *a, Node *sub) {
+  Node *arr = a->arrays;
+  while (!gnq_isnil(arr)) {
+    Node *x = gnq_next(&arr);
+    assert(gnq_is_pair(x));
+    assert(SYM_ARR == gnq_car(x));
+    assert(gnq_is_pair(gnq_cdr(x)));
+    if (gnq_car(gnq_cdr(x)) == sub)
+      return x;
+  }
+
+  Node *next = gnq_list(a, gnq_isnil(sub) ? 1 : 2, SYM_ARR, sub);
+  a->arrays = gnq_cons(a, next, a->arrays);
+  return next;
 }
 
 void arena_test() {
@@ -831,14 +852,14 @@ Node *gnq_parse_unary_operand(Arena *a, State *st) {
     Node *arg = gnq_parse_expression_list(a, st);
     bool expect_closing_construction = check_op(st, "}");
     assert(expect_closing_construction);
-    unary = gnq_cons(a, gnq_sym(a, "{_}"), arg);
+    unary = gnq_cons(a, SYM_STRUCT, arg);
   }
 
   if (!unary && check_op(st, "[")) {
     Node *arg = gnq_parse_expression_list(a, st);
     bool expect_closing_array = check_op(st, "]");
     assert(expect_closing_array);
-    unary = gnq_cons(a, gnq_sym(a, "[_]"), arg);
+    unary = gnq_cons(a, SYM_ARR, arg);
   }
 
   Node *suffix = gnq_parse_suffix_expression(a, st, unary);
@@ -1349,15 +1370,15 @@ Node *gnq_deduce_types(Arena *a, TypeStack *ts, Node *n) {
       TypeStack_revert(ts, te_state);
       return &nil;
     }
-    if (strcmp(syms, "[_]") == 0) {
+    if (sym == SYM_ARR) {
       // TODO store all array types to get them unique pointers
       Node *sub = &nil;
       while (!gnq_isnil(n))
         sub = gnq_deduce_types(a, ts, gnq_next(&n));
-      return gnq_list(a, gnq_isnil(sub) ? 1 : 2, gnq_car(head), sub);
+      return gnq_create_array_type_for(a, sub);
     }
 
-    if (strcmp(syms, "{_}") == 0) {
+    if (sym == SYM_STRUCT) {
       // TODO store all struct types to get them unique pointers
       Node *sub = &nil;
       while (!gnq_isnil(n)) {
@@ -1482,13 +1503,12 @@ Node *gnq_deduce_types(Arena *a, TypeStack *ts, Node *n) {
   return NULL;
 }
 
-bool deduce_as_(Arena *a, const char *gnq, const char *lisp) {
+bool deduce_as__(Arena *a, TypeStack *ts, const char *gnq, const char *lisp) {
   Node *from_lisp = lisp_parse(a, lisp);
   Node *all = gnq_parse_all(a, &(State){gnq, {0, 0}});
   Node *deduced_gnq = NULL;
-  TypeStack ts = (TypeStack){{}, 0, 0};
   while (!gnq_isnil(all))
-    deduced_gnq = gnq_deduce_types(a, &ts, gnq_next(&all));
+    deduced_gnq = gnq_deduce_types(a, ts, gnq_next(&all));
   assert(deduced_gnq);
   if (gnq_equal(deduced_gnq, from_lisp))
     return true;
@@ -1499,6 +1519,10 @@ bool deduce_as_(Arena *a, const char *gnq, const char *lisp) {
   lisp_str(b2, sizeof(b2), deduced_gnq);
   printf("expect '%s' got '%s'\n", b1, b2);
   return false;
+}
+bool deduce_as_(Arena *a, const char *gnq, const char *lisp) {
+  TypeStack ts = (TypeStack){{}, 0, 0};
+  deduce_as__(a, &ts, gnq, lisp);
 }
 
 void gnq_deduce_types_test() {
@@ -1555,6 +1579,38 @@ void gnq_deduce_types_test() {
 
   assert(deduce_as_(&a, "a := { b = [42], c = { x = 2.3} }", "({_} (c ({_} (x f64))) (b ([_] i32)))"));
 
+  Arena_free(&a);
+}
+
+void gnq_deduce_types_advanced_test() {
+  printf("gnq_deduce_types_advanced_test\n");
+
+  Arena a = Arena_create(2048);
+  TypeStack ts = (TypeStack){{}, 0, 0};
+  assert(deduce_as__(&a, &ts, "a := 42", "i32"));
+  assert(deduce_as__(&a, &ts, "b := a", "i32"));
+  assert(deduce_as__(&a, &ts, "c := b", "i32"));
+  Arena_free(&a);
+
+  a = Arena_create(2048);
+  ts = (TypeStack){{}, 0, 0};
+  Node *int_type_1 = gnq_deduce_types(&a, &ts, gnq_parse_statement(&a, &(State){"32", {0, 0}}));
+  Node *int_type_2 = gnq_deduce_types(&a, &ts, gnq_parse_statement(&a, &(State){"32", {0, 0}}));
+  assert(int_type_1 == int_type_2);
+  Arena_free(&a);
+
+  a = Arena_create(2048);
+  ts = (TypeStack){{}, 0, 0};
+  Node *vec_type_1 = gnq_deduce_types(&a, &ts, gnq_parse_statement(&a, &(State){"[32]", {0, 0}}));
+  Node *vec_type_2 = gnq_deduce_types(&a, &ts, gnq_parse_statement(&a, &(State){"[32]", {0, 0}}));
+  assert(vec_type_1 == vec_type_2);
+  Arena_free(&a);
+
+  a = Arena_create(2048);
+  ts = (TypeStack){{}, 0, 0};
+  vec_type_1 = gnq_deduce_types(&a, &ts, gnq_parse_statement(&a, &(State){"[[2]]", {0, 0}}));
+  vec_type_2 = gnq_deduce_types(&a, &ts, gnq_parse_statement(&a, &(State){"[[3]]", {0, 0}}));
+  assert(vec_type_1 == vec_type_2);
   Arena_free(&a);
 }
 
@@ -1642,6 +1698,7 @@ int main() {
   parser_gnq_construction_test();
   gnq_eval_test();
   gnq_deduce_types_test();
+  gnq_deduce_types_advanced_test();
 
   gnq_test_files();
 
