@@ -1340,7 +1340,7 @@ Node *TypeStack_find(TypeStack *ts, const char *id) {
 int TypeStack_state(TypeStack *ts) { return ts->len; }
 void TypeStack_revert(TypeStack *ts, int l) { ts->len = l; }
 
-Node *gnq_deduce_types(Arena *a, TypeStack *ts, Node *n);
+Node *gnq_deduce_types(Arena *a, TypeStack *ts, Node *n, Node **rt);
 
 Node *gnq_struct_member(Arena *a, TypeStack *ts, Node *n) {
   Node *sub = &nil;
@@ -1358,7 +1358,7 @@ Node *gnq_struct_member(Arena *a, TypeStack *ts, Node *n) {
     Node *mem = gnq_car(gnq_cdr(gnq_car(gnq_cdr(sn))));
     Node *val = gnq_car(gnq_cdr(gnq_cdr(sn)));
     assert(val && !gnq_isnil(val));
-    Node *type = gnq_deduce_types(a, ts, val);
+    Node *type = gnq_deduce_types(a, ts, val, NULL);
     assert(type && !gnq_isnil(type));
     sub = gnq_cons(a, gnq_list(a, 2, mem, type), sub);
   }
@@ -1370,7 +1370,7 @@ Node f64 = (Node){{.t = SymbolShort}, {.ss = "f64"}};
 Node str = (Node){{.t = SymbolShort}, {.ss = "str"}};
 Node boolean = (Node){{.t = SymbolShort}, {.ss = "bool"}};
 
-Node *gnq_deduce_types(Arena *a, TypeStack *ts, Node *n) {
+Node *gnq_deduce_types(Arena *a, TypeStack *ts, Node *n, Node **rt) {
   if (gnq_type(n) == NumberInt)
     return &i32;
   if (gnq_type(n) == NumberFloat)
@@ -1395,7 +1395,7 @@ Node *gnq_deduce_types(Arena *a, TypeStack *ts, Node *n) {
 
     if (strcmp(syms, ":=") == 0) {
       Node *var = gnq_next(&n);
-      Node *t = gnq_deduce_types(a, ts, gnq_next(&n));
+      Node *t = gnq_deduce_types(a, ts, gnq_next(&n), rt);
 
       assert(gnq_type(var) == Pair);
       Node *id = gnq_next(&var);
@@ -1411,14 +1411,14 @@ Node *gnq_deduce_types(Arena *a, TypeStack *ts, Node *n) {
     if (strcmp(syms, "{}") == 0) {
       int te_state = TypeStack_state(ts);
       while (!gnq_isnil(n))
-        gnq_deduce_types(a, ts, gnq_next(&n));
+        gnq_deduce_types(a, ts, gnq_next(&n), rt);
       TypeStack_revert(ts, te_state);
       return &nil;
     }
     if (sym == SYM_ARR) {
       Node *sub = &nil;
       while (!gnq_isnil(n))
-        sub = gnq_deduce_types(a, ts, gnq_next(&n));
+        sub = gnq_deduce_types(a, ts, gnq_next(&n), rt);
       return gnq_create_array_type_for(a, sub);
     }
 
@@ -1438,77 +1438,79 @@ Node *gnq_deduce_types(Arena *a, TypeStack *ts, Node *n) {
     if (strcmp(syms, "break") == 0 || strcmp(syms, "continue") == 0)
       return &nil;
     if (strcmp(syms, "return") == 0) {
-      if (!gnq_isnil(n))
-        gnq_deduce_types(a, ts, gnq_next(&n));
+      if (!gnq_isnil(n)) {
+        assert(rt != NULL);
+        *rt = gnq_deduce_types(a, ts, gnq_next(&n), NULL);
+      }
       return &nil;
     }
     if (strcmp(syms, "if") == 0) {
       Node *if_condition = gnq_next(&n);
       assert(if_condition && !gnq_isnil(if_condition));
-      gnq_deduce_types(a, ts, if_condition);
+      gnq_deduce_types(a, ts, if_condition, rt);
       Node *if_scope = gnq_next(&n);
       assert(if_scope && !gnq_isnil(if_scope));
-      gnq_deduce_types(a, ts, if_scope);
+      gnq_deduce_types(a, ts, if_scope, rt);
       Node *else_scope = gnq_next(&n);
       if (else_scope && !gnq_isnil(else_scope))
-        gnq_deduce_types(a, ts, else_scope);
+        gnq_deduce_types(a, ts, else_scope, rt);
       return &nil;
     }
     if (strcmp(syms, "for") == 0) {
       Node *for_init = gnq_next(&n);
       if (!gnq_isnil(for_init))
-        gnq_deduce_types(a, ts, for_init);
+        gnq_deduce_types(a, ts, for_init, rt);
       Node *for_condition = gnq_next(&n);
       if (!gnq_isnil(for_condition))
-        gnq_deduce_types(a, ts, for_condition);
+        gnq_deduce_types(a, ts, for_condition, rt);
       Node *for_increment = gnq_next(&n);
       if (!gnq_isnil(for_increment))
-        gnq_deduce_types(a, ts, for_increment);
+        gnq_deduce_types(a, ts, for_increment, rt);
       Node *for_scope = gnq_next(&n);
       assert(for_scope && !gnq_isnil(for_scope));
-      gnq_deduce_types(a, ts, for_scope);
+      gnq_deduce_types(a, ts, for_scope, rt);
       return &nil;
     }
     if (strcmp(syms, "while") == 0) {
       Node *while_condition = gnq_next(&n);
       assert(while_condition && !gnq_isnil(while_condition));
-      gnq_deduce_types(a, ts, while_condition);
+      gnq_deduce_types(a, ts, while_condition, rt);
       Node *while_scope = gnq_next(&n);
       assert(while_scope && !gnq_isnil(while_scope));
-      gnq_deduce_types(a, ts, while_scope);
+      gnq_deduce_types(a, ts, while_scope, rt);
       return &nil;
     }
     if (strcmp(syms, "dowhile") == 0) {
       Node *do_while_scope = gnq_next(&n);
       assert(do_while_scope && !gnq_isnil(do_while_scope));
-      gnq_deduce_types(a, ts, do_while_scope);
+      gnq_deduce_types(a, ts, do_while_scope, rt);
       Node *do_while_condition = gnq_next(&n);
       assert(do_while_condition && !gnq_isnil(do_while_condition));
-      gnq_deduce_types(a, ts, do_while_condition);
+      gnq_deduce_types(a, ts, do_while_condition, rt);
       return &nil;
     }
     if (strcmp(syms, "case") == 0) {
       Node *case_condition = gnq_next(&n);
       assert(case_condition && !gnq_isnil(case_condition));
-      gnq_deduce_types(a, ts, case_condition);
+      gnq_deduce_types(a, ts, case_condition, rt);
       Node *case_scope = gnq_next(&n);
       assert(case_scope && !gnq_isnil(case_scope));
-      gnq_deduce_types(a, ts, case_scope);
+      gnq_deduce_types(a, ts, case_scope, rt);
       return &nil;
     }
     if (strcmp(syms, "default") == 0) {
       Node *default_scope = gnq_next(&n);
       assert(default_scope && !gnq_isnil(default_scope));
-      gnq_deduce_types(a, ts, default_scope);
+      gnq_deduce_types(a, ts, default_scope, rt);
       return &nil;
     }
     if (strcmp(syms, "switch") == 0) {
       Node *switch_condition = gnq_next(&n);
       assert(switch_condition && !gnq_isnil(switch_condition));
-      gnq_deduce_types(a, ts, switch_condition);
+      gnq_deduce_types(a, ts, switch_condition, rt);
       Node *switch_scope = gnq_next(&n);
       assert(switch_scope && !gnq_isnil(switch_scope));
-      gnq_deduce_types(a, ts, switch_scope);
+      gnq_deduce_types(a, ts, switch_scope, rt);
       return &nil;
     }
 
@@ -1516,13 +1518,35 @@ Node *gnq_deduce_types(Arena *a, TypeStack *ts, Node *n) {
       return head;
     }
 
+    if (strcmp(syms, "call") == 0) {
+      Node *id = gnq_next(&n);
+      assert(gnq_is_pair(id));
+      assert(gnq_is_sym(gnq_car(id)));
+      assert(gnq_is_pair(gnq_cdr(id)));
+      assert(gnq_is_sym(gnq_car(gnq_cdr(id))));
+      id = gnq_car(gnq_cdr(id));
+      Node *fn = TypeStack_find(ts, gnq_tosym(id));
+      assert(gnq_is_pair(fn));
+      assert(gnq_is_sym(gnq_car(fn)));
+      assert(strcmp("fn", gnq_tosym(gnq_car(fn))) == 0);
+      assert(gnq_is_pair(gnq_cdr(fn)));
+      assert(gnq_is_pair(gnq_cdr(gnq_cdr(fn))));
+      assert(gnq_is_pair(gnq_car(gnq_cdr(gnq_cdr(fn)))));
+      assert(gnq_is_sym(gnq_car(gnq_car(gnq_cdr(gnq_cdr(fn))))));
+      assert(strcmp("{}", gnq_tosym(gnq_car(gnq_car(gnq_cdr(gnq_cdr(fn)))))) == 0);
+      lisp_dbg("fn scope ", gnq_car(gnq_cdr(gnq_cdr(fn))));
+      Node *return_type = &nil;
+      gnq_deduce_types(a, ts, gnq_car(gnq_cdr(gnq_cdr(fn))), &return_type);
+      return return_type;
+    }
+
     const BinOp *op = NULL;
     for (size_t i = 0; i < sizeof(ops) / sizeof(ops[0]); ++i)
       if (strcmp(ops[i].op, syms) == 0)
         op = &ops[i];
     if (op) {
-      Node *t1 = gnq_deduce_types(a, ts, gnq_next(&n));
-      Node *t2 = gnq_deduce_types(a, ts, gnq_next(&n));
+      Node *t1 = gnq_deduce_types(a, ts, gnq_next(&n), rt);
+      Node *t2 = gnq_deduce_types(a, ts, gnq_next(&n), rt);
 
       assert(gnq_equal(t1, t2));
       if (op->returns_bool)
@@ -1540,8 +1564,9 @@ bool deduce_as__(Arena *a, TypeStack *ts, const char *gnq, const char *lisp) {
   Node *from_lisp = lisp_parse(a, lisp);
   Node *all = gnq_parse_all(a, &(State){gnq, {0, 0}});
   Node *deduced_gnq = NULL;
+  Node *return_type;
   while (!gnq_isnil(all))
-    deduced_gnq = gnq_deduce_types(a, ts, gnq_next(&all));
+    deduced_gnq = gnq_deduce_types(a, ts, gnq_next(&all), &return_type);
   assert(deduced_gnq);
   if (gnq_equal(deduced_gnq, from_lisp))
     return true;
@@ -1555,7 +1580,7 @@ bool deduce_as__(Arena *a, TypeStack *ts, const char *gnq, const char *lisp) {
 }
 bool deduce_as_(Arena *a, const char *gnq, const char *lisp) {
   TypeStack ts = (TypeStack){{}, 0, 0};
-  deduce_as__(a, &ts, gnq, lisp);
+  return deduce_as__(a, &ts, gnq, lisp);
 }
 
 void gnq_deduce_types_test() {
@@ -1618,6 +1643,7 @@ void gnq_deduce_types_test() {
 void gnq_deduce_types_advanced_test() {
   printf("gnq_deduce_types_advanced_test\n");
 
+  Node *rt;
   Arena a = Arena_create(128);
   TypeStack ts = (TypeStack){{}, 0, 0};
   assert(deduce_as__(&a, &ts, "a := 42", "i32"));
@@ -1627,37 +1653,49 @@ void gnq_deduce_types_advanced_test() {
 
   a = Arena_create(128);
   ts = (TypeStack){{}, 0, 0};
-  Node *int_type_1 = gnq_deduce_types(&a, &ts, gnq_parse_statement(&a, &(State){"32", {0, 0}}));
-  Node *int_type_2 = gnq_deduce_types(&a, &ts, gnq_parse_statement(&a, &(State){"32", {0, 0}}));
+  Node *int_type_1 = gnq_deduce_types(&a, &ts, gnq_parse_statement(&a, &(State){"32", {0, 0}}), &rt);
+  Node *int_type_2 = gnq_deduce_types(&a, &ts, gnq_parse_statement(&a, &(State){"32", {0, 0}}), &rt);
   assert(int_type_1 == int_type_2);
   Arena_free(&a);
 
   a = Arena_create(128);
   ts = (TypeStack){{}, 0, 0};
-  Node *vec_type_1 = gnq_deduce_types(&a, &ts, gnq_parse_statement(&a, &(State){"[32]", {0, 0}}));
-  Node *vec_type_2 = gnq_deduce_types(&a, &ts, gnq_parse_statement(&a, &(State){"[32]", {0, 0}}));
+  Node *vec_type_1 = gnq_deduce_types(&a, &ts, gnq_parse_statement(&a, &(State){"[32]", {0, 0}}), &rt);
+  Node *vec_type_2 = gnq_deduce_types(&a, &ts, gnq_parse_statement(&a, &(State){"[32]", {0, 0}}), &rt);
   assert(vec_type_1 == vec_type_2);
   Arena_free(&a);
 
   a = Arena_create(128);
   ts = (TypeStack){{}, 0, 0};
-  vec_type_1 = gnq_deduce_types(&a, &ts, gnq_parse_statement(&a, &(State){"x := [[2]]", {0, 0}}));
-  vec_type_2 = gnq_deduce_types(&a, &ts, gnq_parse_statement(&a, &(State){"d := [[3]]", {0, 0}}));
+  vec_type_1 = gnq_deduce_types(&a, &ts, gnq_parse_statement(&a, &(State){"x := [[2]]", {0, 0}}), &rt);
+  vec_type_2 = gnq_deduce_types(&a, &ts, gnq_parse_statement(&a, &(State){"d := [[3]]", {0, 0}}), &rt);
   assert(vec_type_1 == vec_type_2);
   Arena_free(&a);
 
   a = Arena_create(128);
   ts = (TypeStack){{}, 0, 0};
-  Node *struct_type_1 = gnq_deduce_types(&a, &ts, gnq_parse_statement(&a, &(State){"a := {}", {0, 0}}));
-  Node *struct_type_2 = gnq_deduce_types(&a, &ts, gnq_parse_statement(&a, &(State){"b := {}", {0, 0}}));
+  Node *struct_type_1 = gnq_deduce_types(&a, &ts, gnq_parse_statement(&a, &(State){"a := {}", {0, 0}}), &rt);
+  Node *struct_type_2 = gnq_deduce_types(&a, &ts, gnq_parse_statement(&a, &(State){"b := {}", {0, 0}}), &rt);
   assert(struct_type_1 == struct_type_2);
   Arena_free(&a);
 
   a = Arena_create(128);
   ts = (TypeStack){{}, 0, 0};
-  struct_type_1 = gnq_deduce_types(&a, &ts, gnq_parse_statement(&a, &(State){"aa := {v=32}", {0, 0}}));
-  struct_type_2 = gnq_deduce_types(&a, &ts, gnq_parse_statement(&a, &(State){"bb := { v=45 }", {0, 0}}));
+  struct_type_1 = gnq_deduce_types(&a, &ts, gnq_parse_statement(&a, &(State){"aa := {v=32}", {0, 0}}), &rt);
+  struct_type_2 = gnq_deduce_types(&a, &ts, gnq_parse_statement(&a, &(State){"bb := { v=45 }", {0, 0}}), &rt);
   assert(struct_type_1 == struct_type_2);
+  Arena_free(&a);
+}
+
+void gnq_deduce_function_calls() {
+  printf("gnq_deduce_function_calls\n");
+
+  Arena a = Arena_create(256);
+  TypeStack ts = (TypeStack){{}, 0, 0};
+  assert(deduce_as__(&a, &ts, "fn a() {}", "(fn () ({}))"));
+
+  assert(deduce_as__(&a, &ts, "a()", ""));
+
   Arena_free(&a);
 }
 
@@ -1746,6 +1784,7 @@ int main() {
   gnq_eval_test();
   gnq_deduce_types_test();
   gnq_deduce_types_advanced_test();
+  gnq_deduce_function_calls();
 
   gnq_test_files();
 
