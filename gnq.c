@@ -1607,42 +1607,42 @@ void gnq_deduce_types_test() {
 void gnq_deduce_types_advanced_test() {
   printf("gnq_deduce_types_advanced_test\n");
 
-  Arena a = Arena_create(2048);
+  Arena a = Arena_create(128);
   TypeStack ts = (TypeStack){{}, 0, 0};
   assert(deduce_as__(&a, &ts, "a := 42", "i32"));
   assert(deduce_as__(&a, &ts, "b := a", "i32"));
   assert(deduce_as__(&a, &ts, "c := b", "i32"));
   Arena_free(&a);
 
-  a = Arena_create(2048);
+  a = Arena_create(128);
   ts = (TypeStack){{}, 0, 0};
   Node *int_type_1 = gnq_deduce_types(&a, &ts, gnq_parse_statement(&a, &(State){"32", {0, 0}}));
   Node *int_type_2 = gnq_deduce_types(&a, &ts, gnq_parse_statement(&a, &(State){"32", {0, 0}}));
   assert(int_type_1 == int_type_2);
   Arena_free(&a);
 
-  a = Arena_create(2048);
+  a = Arena_create(128);
   ts = (TypeStack){{}, 0, 0};
   Node *vec_type_1 = gnq_deduce_types(&a, &ts, gnq_parse_statement(&a, &(State){"[32]", {0, 0}}));
   Node *vec_type_2 = gnq_deduce_types(&a, &ts, gnq_parse_statement(&a, &(State){"[32]", {0, 0}}));
   assert(vec_type_1 == vec_type_2);
   Arena_free(&a);
 
-  a = Arena_create(2048);
+  a = Arena_create(128);
   ts = (TypeStack){{}, 0, 0};
   vec_type_1 = gnq_deduce_types(&a, &ts, gnq_parse_statement(&a, &(State){"x := [[2]]", {0, 0}}));
   vec_type_2 = gnq_deduce_types(&a, &ts, gnq_parse_statement(&a, &(State){"d := [[3]]", {0, 0}}));
   assert(vec_type_1 == vec_type_2);
   Arena_free(&a);
 
-  a = Arena_create(2048);
+  a = Arena_create(128);
   ts = (TypeStack){{}, 0, 0};
   Node *struct_type_1 = gnq_deduce_types(&a, &ts, gnq_parse_statement(&a, &(State){"a := {}", {0, 0}}));
   Node *struct_type_2 = gnq_deduce_types(&a, &ts, gnq_parse_statement(&a, &(State){"b := {}", {0, 0}}));
   assert(struct_type_1 == struct_type_2);
   Arena_free(&a);
 
-  a = Arena_create(2048);
+  a = Arena_create(128);
   ts = (TypeStack){{}, 0, 0};
   struct_type_1 = gnq_deduce_types(&a, &ts, gnq_parse_statement(&a, &(State){"aa := {v=32}", {0, 0}}));
   struct_type_2 = gnq_deduce_types(&a, &ts, gnq_parse_statement(&a, &(State){"bb := { v=45 }", {0, 0}}));
