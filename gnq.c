@@ -316,20 +316,17 @@ Node *gnq_create_array_type_for(Arena *a, Node *sub) {
 
 bool gnq_equal(Node *a, Node *b);
 
-Node *gnq_create_struct_type_for(Arena *a, Node *sub) {
+Node *find_struct_type_for(Arena *a, Node *sub) {
   Node *stru = a->structs;
 
   while (!gnq_isnil(stru)) {
     Node *x = gnq_next(&stru);
     // lisp_dbg("- a ", sub);
     // lisp_dbg("- b ", x);
-    if (gnq_equal(gnq_cdr(x), sub))
+    if (gnq_equal(x, sub))
       return x;
   }
-
-  Node *next = gnq_cons(a, SYM_STRUCT, sub);
-  a->structs = gnq_cons(a, next, a->structs);
-  return next;
+  return NULL;
 }
 
 void arena_test() {
@@ -1343,6 +1340,31 @@ Node *TypeStack_find(TypeStack *ts, const char *id) {
 int TypeStack_state(TypeStack *ts) { return ts->len; }
 void TypeStack_revert(TypeStack *ts, int l) { ts->len = l; }
 
+Node *gnq_deduce_types(Arena *a, TypeStack *ts, Node *n);
+
+Node *gnq_struct_member(Arena *a, TypeStack *ts, Node *n) {
+  Node *sub = &nil;
+  while (!gnq_isnil(n)) {
+    Node *sn = gnq_next(&n);
+    assert(gnq_type(sn) == Pair);
+    assert(gnq_is_sym(gnq_car(sn)));
+    assert(strcmp(gnq_tosym(gnq_car(sn)), "=") == 0);
+    assert(gnq_type(gnq_cdr(sn)) == Pair);
+    assert(gnq_type(gnq_car(gnq_cdr(sn))) == Pair);
+    assert(gnq_is_sym(gnq_car(gnq_car(gnq_cdr(sn)))));
+    assert(strcmp("id", gnq_tosym(gnq_car(gnq_car(gnq_cdr(sn))))) == 0);
+    // list_dbg("{_}: ", gnq_car(gnq_cdr(gnq_car(gnq_cdr(sn)))));
+    assert(gnq_is_sym(gnq_car(gnq_cdr(gnq_car(gnq_cdr(sn))))));
+    Node *mem = gnq_car(gnq_cdr(gnq_car(gnq_cdr(sn))));
+    Node *val = gnq_car(gnq_cdr(gnq_cdr(sn)));
+    assert(val && !gnq_isnil(val));
+    Node *type = gnq_deduce_types(a, ts, val);
+    assert(type && !gnq_isnil(type));
+    sub = gnq_cons(a, gnq_list(a, 2, mem, type), sub);
+  }
+  return gnq_cons(a, SYM_STRUCT, sub);
+}
+
 Node i32 = (Node){{.t = SymbolShort}, {.ss = "i32"}};
 Node f64 = (Node){{.t = SymbolShort}, {.ss = "f64"}};
 Node str = (Node){{.t = SymbolShort}, {.ss = "str"}};
@@ -1401,27 +1423,16 @@ Node *gnq_deduce_types(Arena *a, TypeStack *ts, Node *n) {
     }
 
     if (sym == SYM_STRUCT) {
-      // TODO store all struct types to get them unique pointers
-      Node *sub = &nil;
-      while (!gnq_isnil(n)) {
-        Node *sn = gnq_next(&n);
-        assert(gnq_type(sn) == Pair);
-        assert(gnq_is_sym(gnq_car(sn)));
-        assert(strcmp(gnq_tosym(gnq_car(sn)), "=") == 0);
-        assert(gnq_type(gnq_cdr(sn)) == Pair);
-        assert(gnq_type(gnq_car(gnq_cdr(sn))) == Pair);
-        assert(gnq_is_sym(gnq_car(gnq_car(gnq_cdr(sn)))));
-        assert(strcmp("id", gnq_tosym(gnq_car(gnq_car(gnq_cdr(sn))))) == 0);
-        // list_dbg("{_}: ", gnq_car(gnq_cdr(gnq_car(gnq_cdr(sn)))));
-        assert(gnq_is_sym(gnq_car(gnq_cdr(gnq_car(gnq_cdr(sn))))));
-        Node *mem = gnq_car(gnq_cdr(gnq_car(gnq_cdr(sn))));
-        Node *val = gnq_car(gnq_cdr(gnq_cdr(sn)));
-        assert(val && !gnq_isnil(val));
-        Node *type = gnq_deduce_types(a, ts, val);
-        assert(type && !gnq_isnil(type));
-        sub = gnq_cons(a, gnq_list(a, 2, mem, type), sub);
-      }
-      return gnq_create_struct_type_for(a, sub);
+      Arena aa = Arena_create(128);
+      int ts_state = TypeStack_state(ts);
+      // deduce twice to not leak memory
+      Node *struct_type = gnq_struct_member(&aa, ts, n);
+      TypeStack_revert(ts, ts_state);
+      if ((struct_type = find_struct_type_for(a, struct_type)))
+        return struct_type;
+      struct_type = gnq_struct_member(a, ts, n);
+      a->structs = gnq_cons(a, struct_type, a->structs);
+      return struct_type;
     }
 
     if (strcmp(syms, "break") == 0 || strcmp(syms, "continue") == 0)
