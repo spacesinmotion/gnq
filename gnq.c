@@ -1534,7 +1534,7 @@ Node *gnq_deduce_types(Arena *a, TypeStack *ts, Node *n, Node **rt) {
       assert(gnq_is_pair(gnq_car(gnq_cdr(gnq_cdr(fn)))));
       assert(gnq_is_sym(gnq_car(gnq_car(gnq_cdr(gnq_cdr(fn))))));
       assert(strcmp("{}", gnq_tosym(gnq_car(gnq_car(gnq_cdr(gnq_cdr(fn)))))) == 0);
-      lisp_dbg("fn scope ", gnq_car(gnq_cdr(gnq_cdr(fn))));
+      // lisp_dbg("fn scope ", gnq_car(gnq_cdr(gnq_cdr(fn))));
       Node *return_type = &nil;
       gnq_deduce_types(a, ts, gnq_car(gnq_cdr(gnq_cdr(fn))), &return_type);
       return return_type;
@@ -1693,8 +1693,9 @@ void gnq_deduce_function_calls() {
   Arena a = Arena_create(256);
   TypeStack ts = (TypeStack){{}, 0, 0};
   assert(deduce_as__(&a, &ts, "fn a() {}", "(fn () ({}))"));
-
+  assert(deduce_as__(&a, &ts, "fn b() { return 42 }", "(fn () ({} (return 42)))"));
   assert(deduce_as__(&a, &ts, "a()", ""));
+  assert(deduce_as__(&a, &ts, "b()", "i32"));
 
   Arena_free(&a);
 }
