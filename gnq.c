@@ -683,7 +683,7 @@ size_t lisp_str(char *b, size_t s, Node *a) {
   assert(a);
 
   if (gnq_type(a) == NumberInt)
-#ifdef WIN32
+#ifdef _WIN32
     return snprintf(b, s, "%lld", gnq_toint(a));
 #else
     return snprintf(b, s, "%ld", gnq_toint(a));
