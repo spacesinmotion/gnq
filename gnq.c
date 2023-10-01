@@ -276,6 +276,10 @@ Node *gnq_cdr(Node *n) {
   return n->cdr.n;
 }
 
+bool gnq_is_call(Node *n, const char *sym) {
+  return gnq_is_pair(n) && gnq_is_sym(gnq_car(n)) && strcmp(sym, gnq_tosym(gnq_car(n))) == 0;
+}
+
 bool gnq_isnil(Node *n) { return n == &nil; }
 
 Node *gnq_list(Arena *a, int count, ...) {
@@ -1397,9 +1401,8 @@ Node *gnq_deduce_types(Arena *a, TypeStack *ts, Node *n, Node **rt) {
       Node *var = gnq_next(&n);
       Node *t = gnq_deduce_types(a, ts, gnq_next(&n), rt);
 
-      assert(gnq_type(var) == Pair);
+      assert(gnq_is_call(var, "id"));
       Node *id = gnq_next(&var);
-      assert(gnq_is_sym(id));
       id = gnq_next(&var);
       assert(gnq_is_sym(id));
 
@@ -1519,24 +1522,36 @@ Node *gnq_deduce_types(Arena *a, TypeStack *ts, Node *n, Node **rt) {
     }
 
     if (strcmp(syms, "call") == 0) {
-      Node *id = gnq_next(&n);
-      assert(gnq_is_pair(id));
-      assert(gnq_is_sym(gnq_car(id)));
-      assert(gnq_is_pair(gnq_cdr(id)));
-      assert(gnq_is_sym(gnq_car(gnq_cdr(id))));
-      id = gnq_car(gnq_cdr(id));
-      Node *fn = TypeStack_find(ts, gnq_tosym(id));
-      assert(gnq_is_pair(fn));
-      assert(gnq_is_sym(gnq_car(fn)));
-      assert(strcmp("fn", gnq_tosym(gnq_car(fn))) == 0);
-      assert(gnq_is_pair(gnq_cdr(fn)));
-      assert(gnq_is_pair(gnq_cdr(gnq_cdr(fn))));
-      assert(gnq_is_pair(gnq_car(gnq_cdr(gnq_cdr(fn)))));
-      assert(gnq_is_sym(gnq_car(gnq_car(gnq_cdr(gnq_cdr(fn))))));
-      assert(strcmp("{}", gnq_tosym(gnq_car(gnq_car(gnq_cdr(gnq_cdr(fn)))))) == 0);
-      // lisp_dbg("fn scope ", gnq_car(gnq_cdr(gnq_cdr(fn))));
+      lisp_dbg("call ", n);
+      Node *fn = gnq_deduce_types(a, ts, gnq_next(&n), rt);
+      lisp_dbg(" - func ", fn);
+      Node *c_param = gnq_next(&n);
+      lisp_dbg(" - parameter called ", c_param);
+
+      assert(gnq_is_call(fn, "fn"));
+      Node *fn_sym = gnq_next(&fn);
+      Node *fn_param = gnq_next(&fn);
+      lisp_dbg(" - parameter expect ", fn_param);
+      Node *fn_scope = gnq_next(&fn);
+      assert(gnq_is_call(fn_scope, "{}"));
+
+      int ts_state = TypeStack_state(ts);
+
+      while (!gnq_isnil(fn_param) && !gnq_isnil(c_param)) {
+        Node *p_id = gnq_next(&fn_param);
+        assert(gnq_is_call(p_id, "id"));
+        Node *c_type = gnq_deduce_types(a, ts, gnq_next(&c_param), rt);
+        assert(!gnq_isnil(c_type));
+
+        gnq_next(&p_id);
+        const char *n_id = gnq_tosym(gnq_next(&p_id));
+        TypeStack_push(ts, n_id, c_type);
+      }
+
       Node *return_type = &nil;
-      gnq_deduce_types(a, ts, gnq_car(gnq_cdr(gnq_cdr(fn))), &return_type);
+      gnq_deduce_types(a, ts, fn_scope, &return_type);
+
+      TypeStack_revert(ts, ts_state);
       return return_type;
     }
 
@@ -1696,7 +1711,14 @@ void gnq_deduce_function_calls() {
   assert(deduce_as__(&a, &ts, "fn b() { return 42 }", "(fn () ({} (return 42)))"));
   assert(deduce_as__(&a, &ts, "a()", ""));
   assert(deduce_as__(&a, &ts, "b()", "i32"));
+  Arena_free(&a);
 
+  a = Arena_create(256);
+  ts = (TypeStack){{}, 0, 0};
+  assert(deduce_as__(&a, &ts, "fn fun1(x) {}", "(fn ((id x)) ({}))"));
+  assert(deduce_as__(&a, &ts, "fn fun2(x) { return x }", "(fn ((id x)) ({} (return (id x))))"));
+  assert(deduce_as__(&a, &ts, "fun1(12)", ""));
+  assert(deduce_as__(&a, &ts, "fun2(12)", "i32"));
   Arena_free(&a);
 }
 
@@ -1712,7 +1734,7 @@ void gnq_eval_test() {
   execute_c("void some_func(int, char*);"
             "void check_func(int a, char* b){"
             "  if (a<0) return; "
-            "  some_func(a,b);"
+            "    some_func(a,b);"
             "  check_func(a-1,b); "
             "}"
             "int main(int argc, char**argv) { "
