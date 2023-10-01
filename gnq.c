@@ -1390,8 +1390,8 @@ Node *gnq_deduce_types(Arena *a, TypeStack *ts, Node *n, Node **rt) {
   if (gnq_is_str(n))
     return &str;
 
+  Node *head = n;
   if (gnq_type(n) == Pair) {
-    Node *head = n;
     Node *sym = gnq_next(&n);
     assert(gnq_is_sym(sym));
     const char *syms = gnq_tosym(sym);
@@ -1424,6 +1424,12 @@ Node *gnq_deduce_types(Arena *a, TypeStack *ts, Node *n, Node **rt) {
       while (!gnq_is_nil(n))
         sub = gnq_deduce_types(a, ts, gnq_next(&n), rt);
       return gnq_create_array_type_for(a, sub);
+    }
+
+    if (strcmp(syms, "[]") == 0) {
+      Node *array_type = gnq_deduce_types(a, ts, gnq_next(&n), rt);
+      assert(gnq_is_call(array_type, "[_]"));
+      return gnq_car(gnq_cdr(array_type));
     }
 
     if (sym == SYM_STRUCT) {
@@ -1588,6 +1594,7 @@ Node *gnq_deduce_types(Arena *a, TypeStack *ts, Node *n, Node **rt) {
     }
   }
 
+  lisp_dbg("unknown way to deduce type ", head);
 #define DEDUCE_TYPE_CONSTRUCT_MISSING false
   assert(DEDUCE_TYPE_CONSTRUCT_MISSING);
   return NULL;
@@ -1732,6 +1739,23 @@ void gnq_deduce_struct_member() {
   Arena_free(&a);
 }
 
+void gnq_deduce_array_access() {
+  printf("gnq_deduce_array_access\n");
+
+  Arena a = Arena_create(256);
+  TypeStack ts = (TypeStack){{}, 0, 0};
+  assert(deduce_as__(&a, &ts, "a := [1, 2, 3]", "([_] i32)"));
+  assert(deduce_as__(&a, &ts, "a", "([_] i32)"));
+  assert(deduce_as__(&a, &ts, "a[0]", "i32"));
+
+  assert(deduce_as__(&a, &ts, "b := [[1, 2, 3]]", "([_] ([_] i32))"));
+  assert(deduce_as__(&a, &ts, "b", "([_] ([_] i32))"));
+  assert(deduce_as__(&a, &ts, "b[0]", "([_] i32)"));
+  assert(deduce_as__(&a, &ts, "b[0][1]", "i32"));
+
+  Arena_free(&a);
+}
+
 void gnq_deduce_function_calls() {
   printf("gnq_deduce_function_calls\n");
 
@@ -1844,6 +1868,7 @@ int main() {
   gnq_deduce_types_test();
   gnq_deduce_types_advanced_test();
   gnq_deduce_struct_member();
+  gnq_deduce_array_access();
   gnq_deduce_function_calls();
 
   gnq_test_files();
