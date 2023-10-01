@@ -280,7 +280,7 @@ bool gnq_is_call(Node *n, const char *sym) {
   return gnq_is_pair(n) && gnq_is_sym(gnq_car(n)) && strcmp(sym, gnq_tosym(gnq_car(n))) == 0;
 }
 
-bool gnq_isnil(Node *n) { return n == &nil; }
+bool gnq_is_nil(Node *n) { return n == &nil; }
 
 Node *gnq_list(Arena *a, int count, ...) {
   Node *nodes[16];
@@ -304,7 +304,7 @@ Node *gnq_next(Node **list) {
 
 Node *gnq_create_array_type_for(Arena *a, Node *sub) {
   Node *arr = a->arrays;
-  while (!gnq_isnil(arr)) {
+  while (!gnq_is_nil(arr)) {
     Node *x = gnq_next(&arr);
     assert(gnq_is_pair(x));
     assert(SYM_ARR == gnq_car(x));
@@ -313,7 +313,7 @@ Node *gnq_create_array_type_for(Arena *a, Node *sub) {
       return x;
   }
 
-  Node *next = gnq_list(a, gnq_isnil(sub) ? 1 : 2, SYM_ARR, sub);
+  Node *next = gnq_list(a, gnq_is_nil(sub) ? 1 : 2, SYM_ARR, sub);
   a->arrays = gnq_cons(a, next, a->arrays);
   return next;
 }
@@ -323,7 +323,7 @@ bool gnq_equal(Node *a, Node *b);
 Node *find_struct_type_for(Arena *a, Node *sub) {
   Node *stru = a->structs;
 
-  while (!gnq_isnil(stru)) {
+  while (!gnq_is_nil(stru)) {
     Node *x = gnq_next(&stru);
     // lisp_dbg("- a ", sub);
     // lisp_dbg("- b ", x);
@@ -411,7 +411,7 @@ void list_test() {
   assert(n2 == gnq_next(&list) && list != NULL);
   assert(n3 == gnq_next(&list));
   assert(list == &nil);
-  assert(gnq_isnil(list));
+  assert(gnq_is_nil(list));
 
   Arena_free(&a);
 }
@@ -574,46 +574,46 @@ void parser_list_test() {
   Arena a = Arena_create(256);
 
   Node *n = lisp_parse(&a, "");
-  assert(n && gnq_isnil(n));
+  assert(n && gnq_is_nil(n));
   n = lisp_parse(&a, "()");
-  assert(n && gnq_isnil(n));
+  assert(n && gnq_is_nil(n));
 
   n = lisp_parse(&a, "(a)");
   assert(n && gnq_type(n) == Pair);
   Node *nn = gnq_next(&n);
-  assert(nn && gnq_type(nn) == SymbolShort && gnq_isnil(n));
+  assert(nn && gnq_type(nn) == SymbolShort && gnq_is_nil(n));
 
   n = lisp_parse(&a, "(1 2 3)");
   assert(n && gnq_type(n) == Pair);
   nn = gnq_next(&n);
-  assert(nn && gnq_type(nn) == NumberInt && gnq_toint(nn) == 1 && !gnq_isnil(n));
+  assert(nn && gnq_type(nn) == NumberInt && gnq_toint(nn) == 1 && !gnq_is_nil(n));
   nn = gnq_next(&n);
-  assert(nn && gnq_type(nn) == NumberInt && gnq_toint(nn) == 2 && !gnq_isnil(n));
+  assert(nn && gnq_type(nn) == NumberInt && gnq_toint(nn) == 2 && !gnq_is_nil(n));
   nn = gnq_next(&n);
-  assert(nn && gnq_type(nn) == NumberInt && gnq_toint(nn) == 3 && gnq_isnil(n));
+  assert(nn && gnq_type(nn) == NumberInt && gnq_toint(nn) == 3 && gnq_is_nil(n));
 
   n = lisp_parse(&a, "(1 (2 3))");
   assert(n && gnq_type(n) == Pair);
   nn = gnq_next(&n);
-  assert(nn && gnq_type(nn) == NumberInt && gnq_toint(nn) == 1 && !gnq_isnil(n));
+  assert(nn && gnq_type(nn) == NumberInt && gnq_toint(nn) == 1 && !gnq_is_nil(n));
   nn = gnq_next(&n);
-  assert(nn && gnq_type(nn) == Pair && gnq_isnil(n));
+  assert(nn && gnq_type(nn) == Pair && gnq_is_nil(n));
   n = nn;
   nn = gnq_next(&n);
-  assert(nn && gnq_type(nn) == NumberInt && gnq_toint(nn) == 2 && !gnq_isnil(n));
+  assert(nn && gnq_type(nn) == NumberInt && gnq_toint(nn) == 2 && !gnq_is_nil(n));
   nn = gnq_next(&n);
-  assert(nn && gnq_type(nn) == NumberInt && gnq_toint(nn) == 3 && gnq_isnil(n));
+  assert(nn && gnq_type(nn) == NumberInt && gnq_toint(nn) == 3 && gnq_is_nil(n));
 
   n = lisp_parse(&a, "(1 () 3.2  gg)");
   assert(n && gnq_type(n) == Pair);
   nn = gnq_next(&n);
-  assert(nn && gnq_type(nn) == NumberInt && gnq_toint(nn) == 1 && !gnq_isnil(n));
+  assert(nn && gnq_type(nn) == NumberInt && gnq_toint(nn) == 1 && !gnq_is_nil(n));
   nn = gnq_next(&n);
-  assert(gnq_isnil(nn) && !gnq_isnil(n));
+  assert(gnq_is_nil(nn) && !gnq_is_nil(n));
   nn = gnq_next(&n);
-  assert(nn && gnq_type(nn) == NumberFloat && gnq_tofloat(nn) == 3.2 && !gnq_isnil(n));
+  assert(nn && gnq_type(nn) == NumberFloat && gnq_tofloat(nn) == 3.2 && !gnq_is_nil(n));
   nn = gnq_next(&n);
-  assert(nn && gnq_type(nn) == SymbolShort && strcmp(gnq_tosym(nn), "gg") == 0 && gnq_isnil(n));
+  assert(nn && gnq_type(nn) == SymbolShort && strcmp(gnq_tosym(nn), "gg") == 0 && gnq_is_nil(n));
 
   Arena_free(&a);
 }
@@ -637,10 +637,10 @@ bool gnq_equal(Node *a, Node *b) {
     return strcmp(gnq_tosym(a), gnq_tosym(b)) == 0;
 
   if (gnq_type(a) == Pair) {
-    while (!gnq_isnil(a) && !gnq_isnil(b))
+    while (!gnq_is_nil(a) && !gnq_is_nil(b))
       if (!gnq_equal(gnq_next(&a), gnq_next(&b)))
         return false;
-    return gnq_isnil(a) && gnq_isnil(b);
+    return gnq_is_nil(a) && gnq_is_nil(b);
   }
 
   return false;
@@ -703,7 +703,7 @@ size_t lisp_str(char *b, size_t s, Node *a) {
 
   if (gnq_type(a) == Pair) {
     size_t i = snprintf(b, s, "(");
-    while (!gnq_isnil(a)) {
+    while (!gnq_is_nil(a)) {
       if (i > 1)
         i += snprintf(b + i, s - i, " ");
       i += lisp_str(b + i, s - i, gnq_next(&a));
@@ -1348,7 +1348,7 @@ Node *gnq_deduce_types(Arena *a, TypeStack *ts, Node *n, Node **rt);
 
 Node *gnq_struct_member(Arena *a, TypeStack *ts, Node *n) {
   Node *sub = &nil;
-  while (!gnq_isnil(n)) {
+  while (!gnq_is_nil(n)) {
     Node *sn = gnq_next(&n);
     assert(gnq_type(sn) == Pair);
     assert(gnq_is_sym(gnq_car(sn)));
@@ -1361,9 +1361,9 @@ Node *gnq_struct_member(Arena *a, TypeStack *ts, Node *n) {
     assert(gnq_is_sym(gnq_car(gnq_cdr(gnq_car(gnq_cdr(sn))))));
     Node *mem = gnq_car(gnq_cdr(gnq_car(gnq_cdr(sn))));
     Node *val = gnq_car(gnq_cdr(gnq_cdr(sn)));
-    assert(val && !gnq_isnil(val));
+    assert(val && !gnq_is_nil(val));
     Node *type = gnq_deduce_types(a, ts, val, NULL);
-    assert(type && !gnq_isnil(type));
+    assert(type && !gnq_is_nil(type));
     sub = gnq_cons(a, gnq_list(a, 2, mem, type), sub);
   }
   return gnq_cons(a, SYM_STRUCT, sub);
@@ -1405,28 +1405,23 @@ Node *gnq_deduce_types(Arena *a, TypeStack *ts, Node *n, Node **rt) {
 
     if (strcmp(syms, ":=") == 0) {
       Node *var = gnq_next(&n);
-      Node *t = gnq_deduce_types(a, ts, gnq_next(&n), rt);
-
       assert(gnq_is_call(var, "id"));
-      Node *id = gnq_next(&var);
-      id = gnq_next(&var);
-      assert(gnq_is_sym(id));
-
-      TypeStack_push(ts, gnq_tosym(id), t);
-
+      Node *t = gnq_deduce_types(a, ts, gnq_next(&n), rt);
+      assert(!gnq_is_nil(t));
+      TypeStack_push(ts, gnq_id_sym(var), t);
       return t;
     }
 
     if (strcmp(syms, "{}") == 0) {
       int te_state = TypeStack_state(ts);
-      while (!gnq_isnil(n))
+      while (!gnq_is_nil(n))
         gnq_deduce_types(a, ts, gnq_next(&n), rt);
       TypeStack_revert(ts, te_state);
       return &nil;
     }
     if (sym == SYM_ARR) {
       Node *sub = &nil;
-      while (!gnq_isnil(n))
+      while (!gnq_is_nil(n))
         sub = gnq_deduce_types(a, ts, gnq_next(&n), rt);
       return gnq_create_array_type_for(a, sub);
     }
@@ -1451,7 +1446,7 @@ Node *gnq_deduce_types(Arena *a, TypeStack *ts, Node *n, Node **rt) {
       Node *mem_look = gnq_next(&n);
       assert(gnq_is_call(mem_look, "id"));
       const char *search_id = gnq_id_sym(mem_look);
-      while (!gnq_isnil(struct_type)) {
+      while (!gnq_is_nil(struct_type)) {
         Node *mem = gnq_next(&struct_type);
         // lisp_dbg("test struct member ", mem);
         if (gnq_is_call(mem, search_id))
@@ -1465,7 +1460,7 @@ Node *gnq_deduce_types(Arena *a, TypeStack *ts, Node *n, Node **rt) {
     if (strcmp(syms, "break") == 0 || strcmp(syms, "continue") == 0)
       return &nil;
     if (strcmp(syms, "return") == 0) {
-      if (!gnq_isnil(n)) {
+      if (!gnq_is_nil(n)) {
         assert(rt != NULL);
         *rt = gnq_deduce_types(a, ts, gnq_next(&n), NULL);
       }
@@ -1473,70 +1468,70 @@ Node *gnq_deduce_types(Arena *a, TypeStack *ts, Node *n, Node **rt) {
     }
     if (strcmp(syms, "if") == 0) {
       Node *if_condition = gnq_next(&n);
-      assert(if_condition && !gnq_isnil(if_condition));
+      assert(if_condition && !gnq_is_nil(if_condition));
       gnq_deduce_types(a, ts, if_condition, rt);
       Node *if_scope = gnq_next(&n);
-      assert(if_scope && !gnq_isnil(if_scope));
+      assert(if_scope && !gnq_is_nil(if_scope));
       gnq_deduce_types(a, ts, if_scope, rt);
       Node *else_scope = gnq_next(&n);
-      if (else_scope && !gnq_isnil(else_scope))
+      if (else_scope && !gnq_is_nil(else_scope))
         gnq_deduce_types(a, ts, else_scope, rt);
       return &nil;
     }
     if (strcmp(syms, "for") == 0) {
       Node *for_init = gnq_next(&n);
-      if (!gnq_isnil(for_init))
+      if (!gnq_is_nil(for_init))
         gnq_deduce_types(a, ts, for_init, rt);
       Node *for_condition = gnq_next(&n);
-      if (!gnq_isnil(for_condition))
+      if (!gnq_is_nil(for_condition))
         gnq_deduce_types(a, ts, for_condition, rt);
       Node *for_increment = gnq_next(&n);
-      if (!gnq_isnil(for_increment))
+      if (!gnq_is_nil(for_increment))
         gnq_deduce_types(a, ts, for_increment, rt);
       Node *for_scope = gnq_next(&n);
-      assert(for_scope && !gnq_isnil(for_scope));
+      assert(for_scope && !gnq_is_nil(for_scope));
       gnq_deduce_types(a, ts, for_scope, rt);
       return &nil;
     }
     if (strcmp(syms, "while") == 0) {
       Node *while_condition = gnq_next(&n);
-      assert(while_condition && !gnq_isnil(while_condition));
+      assert(while_condition && !gnq_is_nil(while_condition));
       gnq_deduce_types(a, ts, while_condition, rt);
       Node *while_scope = gnq_next(&n);
-      assert(while_scope && !gnq_isnil(while_scope));
+      assert(while_scope && !gnq_is_nil(while_scope));
       gnq_deduce_types(a, ts, while_scope, rt);
       return &nil;
     }
     if (strcmp(syms, "dowhile") == 0) {
       Node *do_while_scope = gnq_next(&n);
-      assert(do_while_scope && !gnq_isnil(do_while_scope));
+      assert(do_while_scope && !gnq_is_nil(do_while_scope));
       gnq_deduce_types(a, ts, do_while_scope, rt);
       Node *do_while_condition = gnq_next(&n);
-      assert(do_while_condition && !gnq_isnil(do_while_condition));
+      assert(do_while_condition && !gnq_is_nil(do_while_condition));
       gnq_deduce_types(a, ts, do_while_condition, rt);
       return &nil;
     }
     if (strcmp(syms, "case") == 0) {
       Node *case_condition = gnq_next(&n);
-      assert(case_condition && !gnq_isnil(case_condition));
+      assert(case_condition && !gnq_is_nil(case_condition));
       gnq_deduce_types(a, ts, case_condition, rt);
       Node *case_scope = gnq_next(&n);
-      assert(case_scope && !gnq_isnil(case_scope));
+      assert(case_scope && !gnq_is_nil(case_scope));
       gnq_deduce_types(a, ts, case_scope, rt);
       return &nil;
     }
     if (strcmp(syms, "default") == 0) {
       Node *default_scope = gnq_next(&n);
-      assert(default_scope && !gnq_isnil(default_scope));
+      assert(default_scope && !gnq_is_nil(default_scope));
       gnq_deduce_types(a, ts, default_scope, rt);
       return &nil;
     }
     if (strcmp(syms, "switch") == 0) {
       Node *switch_condition = gnq_next(&n);
-      assert(switch_condition && !gnq_isnil(switch_condition));
+      assert(switch_condition && !gnq_is_nil(switch_condition));
       gnq_deduce_types(a, ts, switch_condition, rt);
       Node *switch_scope = gnq_next(&n);
-      assert(switch_scope && !gnq_isnil(switch_scope));
+      assert(switch_scope && !gnq_is_nil(switch_scope));
       gnq_deduce_types(a, ts, switch_scope, rt);
       return &nil;
     }
@@ -1561,18 +1556,15 @@ Node *gnq_deduce_types(Arena *a, TypeStack *ts, Node *n, Node **rt) {
 
       int ts_state = TypeStack_state(ts);
 
-      while (!gnq_isnil(fn_param) && !gnq_isnil(c_param)) {
+      while (!gnq_is_nil(fn_param) && !gnq_is_nil(c_param)) {
         Node *p_id = gnq_next(&fn_param);
         assert(gnq_is_call(p_id, "id"));
         Node *c_type = gnq_deduce_types(a, ts, gnq_next(&c_param), rt);
-        assert(!gnq_isnil(c_type));
-
-        gnq_next(&p_id);
-        const char *n_id = gnq_tosym(gnq_next(&p_id));
-        TypeStack_push(ts, n_id, c_type);
+        assert(!gnq_is_nil(c_type));
+        TypeStack_push(ts, gnq_id_sym(p_id), c_type);
       }
       // expect the same number of parameter
-      assert(gnq_isnil(fn_param) && gnq_isnil(c_param));
+      assert(gnq_is_nil(fn_param) && gnq_is_nil(c_param));
 
       Node *return_type = &nil;
       gnq_deduce_types(a, ts, fn_scope, &return_type);
@@ -1606,7 +1598,7 @@ bool deduce_as__(Arena *a, TypeStack *ts, const char *gnq, const char *lisp) {
   Node *all = gnq_parse_all(a, &(State){gnq, {0, 0}});
   Node *deduced_gnq = NULL;
   Node *return_type;
-  while (!gnq_isnil(all))
+  while (!gnq_is_nil(all))
     deduced_gnq = gnq_deduce_types(a, ts, gnq_next(&all), &return_type);
   assert(deduced_gnq);
   if (gnq_equal(deduced_gnq, from_lisp))
