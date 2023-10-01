@@ -1369,6 +1369,12 @@ Node *gnq_struct_member(Arena *a, TypeStack *ts, Node *n) {
   return gnq_cons(a, SYM_STRUCT, sub);
 }
 
+const char *gnq_id_sym(Node *id) {
+  Node *var = gnq_next(&id);
+  assert(gnq_is_sym(var));
+  return gnq_tosym(gnq_next(&id));
+}
+
 Node i32 = (Node){{.t = SymbolShort}, {.ss = "i32"}};
 Node f64 = (Node){{.t = SymbolShort}, {.ss = "f64"}};
 Node str = (Node){{.t = SymbolShort}, {.ss = "str"}};
@@ -1436,6 +1442,24 @@ Node *gnq_deduce_types(Arena *a, TypeStack *ts, Node *n, Node **rt) {
       struct_type = gnq_struct_member(a, ts, n);
       a->structs = gnq_cons(a, struct_type, a->structs);
       return struct_type;
+    }
+
+    if (strcmp(syms, ".") == 0) {
+      Node *struct_type = gnq_deduce_types(a, ts, gnq_next(&n), rt);
+      assert(gnq_is_call(struct_type, "{_}"));
+      gnq_next(&struct_type);
+      Node *mem_look = gnq_next(&n);
+      assert(gnq_is_call(mem_look, "id"));
+      const char *search_id = gnq_id_sym(mem_look);
+      while (!gnq_isnil(struct_type)) {
+        Node *mem = gnq_next(&struct_type);
+        // lisp_dbg("test struct member ", mem);
+        if (gnq_is_call(mem, search_id))
+          return gnq_car(gnq_cdr(mem));
+      }
+#define DID_NOT_FIND_STRUCT_MEMBER false
+      assert(DID_NOT_FIND_STRUCT_MEMBER);
+      return &nil;
     }
 
     if (strcmp(syms, "break") == 0 || strcmp(syms, "continue") == 0)
@@ -1522,16 +1546,16 @@ Node *gnq_deduce_types(Arena *a, TypeStack *ts, Node *n, Node **rt) {
     }
 
     if (strcmp(syms, "call") == 0) {
-      lisp_dbg("call ", n);
+      // lisp_dbg("call ", n);
       Node *fn = gnq_deduce_types(a, ts, gnq_next(&n), rt);
-      lisp_dbg(" - func ", fn);
+      // lisp_dbg(" - func ", fn);
       Node *c_param = gnq_next(&n);
-      lisp_dbg(" - parameter called ", c_param);
+      // lisp_dbg(" - parameter called ", c_param);
 
       assert(gnq_is_call(fn, "fn"));
       Node *fn_sym = gnq_next(&fn);
       Node *fn_param = gnq_next(&fn);
-      lisp_dbg(" - parameter expect ", fn_param);
+      // lisp_dbg(" - parameter expect ", fn_param);
       Node *fn_scope = gnq_next(&fn);
       assert(gnq_is_call(fn_scope, "{}"));
 
@@ -1704,6 +1728,18 @@ void gnq_deduce_types_advanced_test() {
   Arena_free(&a);
 }
 
+void gnq_deduce_struct_member() {
+  printf("gnq_deduce_struct_member\n");
+
+  Arena a = Arena_create(256);
+  TypeStack ts = (TypeStack){{}, 0, 0};
+  assert(deduce_as__(&a, &ts, "a := { b = 42 }", "({_} (b i32))"));
+  assert(deduce_as__(&a, &ts, "a", "({_} (b i32))"));
+  assert(deduce_as__(&a, &ts, "a.b", "i32"));
+
+  Arena_free(&a);
+}
+
 void gnq_deduce_function_calls() {
   printf("gnq_deduce_function_calls\n");
 
@@ -1726,6 +1762,7 @@ void gnq_deduce_function_calls() {
   assert(deduce_as__(&a, &ts, "fun2(1.2)", "f64"));
   assert(deduce_as__(&a, &ts, "fun3(1, 2)", "i32"));
   assert(deduce_as__(&a, &ts, "fun3(true, false)", "bool"));
+  assert(deduce_as__(&a, &ts, "fun2([12])", "([_] i32)"));
   Arena_free(&a);
 }
 
@@ -1814,6 +1851,7 @@ int main() {
   gnq_eval_test();
   gnq_deduce_types_test();
   gnq_deduce_types_advanced_test();
+  gnq_deduce_struct_member();
   gnq_deduce_function_calls();
 
   gnq_test_files();
