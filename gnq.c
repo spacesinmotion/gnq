@@ -1547,6 +1547,8 @@ Node *gnq_deduce_types(Arena *a, TypeStack *ts, Node *n, Node **rt) {
         const char *n_id = gnq_tosym(gnq_next(&p_id));
         TypeStack_push(ts, n_id, c_type);
       }
+      // expect the same number of parameter
+      assert(gnq_isnil(fn_param) && gnq_isnil(c_param));
 
       Node *return_type = &nil;
       gnq_deduce_types(a, ts, fn_scope, &return_type);
@@ -1717,8 +1719,13 @@ void gnq_deduce_function_calls() {
   ts = (TypeStack){{}, 0, 0};
   assert(deduce_as__(&a, &ts, "fn fun1(x) {}", "(fn ((id x)) ({}))"));
   assert(deduce_as__(&a, &ts, "fn fun2(x) { return x }", "(fn ((id x)) ({} (return (id x))))"));
+  assert(deduce_as__(&a, &ts, "fn fun3(x, y) { return x + y }", //
+                     "(fn ((id x) (id y)) ({} (return (+ (id x) (id y)))))"));
   assert(deduce_as__(&a, &ts, "fun1(12)", ""));
   assert(deduce_as__(&a, &ts, "fun2(12)", "i32"));
+  assert(deduce_as__(&a, &ts, "fun2(1.2)", "f64"));
+  assert(deduce_as__(&a, &ts, "fun3(1, 2)", "i32"));
+  assert(deduce_as__(&a, &ts, "fun3(true, false)", "bool"));
   Arena_free(&a);
 }
 
