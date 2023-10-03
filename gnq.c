@@ -350,10 +350,24 @@ Node *find_struct_type_for(Arena *a, Node *sub) {
 
 void gnq_add_deduced_function(Arena *a, Node *fn, Node *param_types[], int param_len) {
   Node *fns = a->functions;
-  while (!gnq_is_nil(fns))
-    if (gnq_car(gnq_next(&fns)) == fn)
-      return;
+  while (!gnq_is_nil(fns)) {
+    Node *f = gnq_next(&fns);
+    if (gnq_car(f) != fn)
+      continue;
 
+    Node *deduced = gnq_cdr(f);
+    while (!gnq_is_nil(deduced)) {
+      Node *pl = gnq_next(&deduced);
+      assert(gnq_list_len(pl) == param_len);
+      if (gnq_list_len(pl) != param_len)
+        continue;
+      bool equal = true;
+      for (int i = 0; i < param_len && equal; ++i)
+        equal = gnq_next(&pl) == param_types[i];
+      if (equal)
+        return;
+    }
+  }
   a->functions = gnq_cons(a, gnq_list(a, 2, fn, gnq_as_list(a, param_len, param_types)), a->functions);
 }
 
@@ -1572,12 +1586,13 @@ Node *gnq_deduce_types(Arena *a, TypeStack *ts, Node *n, Node **rt) {
 
     if (strcmp(syms, "call") == 0) {
       // lisp_dbg("call ", n);
-      Node *fn = gnq_deduce_types(a, ts, gnq_next(&n), rt);
+      Node *this_fn = gnq_deduce_types(a, ts, gnq_next(&n), rt);
       // lisp_dbg(" - func ", fn);
       Node *c_param = gnq_next(&n);
       // lisp_dbg(" - parameter called ", c_param);
 
-      assert(gnq_is_call(fn, "fn"));
+      assert(gnq_is_call(this_fn, "fn"));
+      Node *fn = this_fn;
       Node *fn_sym = gnq_next(&fn);
       Node *fn_param = gnq_next(&fn);
       // lisp_dbg(" - parameter expect ", fn_param);
@@ -1606,7 +1621,8 @@ Node *gnq_deduce_types(Arena *a, TypeStack *ts, Node *n, Node **rt) {
 
       TypeStack_revert(ts, ts_state);
 
-      gnq_add_deduced_function(a, fn, param_types, param_len);
+      assert(!gnq_is_nil(this_fn));
+      gnq_add_deduced_function(a, this_fn, param_types, param_len);
 
       return return_type;
     }
@@ -1800,7 +1816,7 @@ void gnq_deduce_function_calls() {
   assert(deduce_as__(&a, &ts, "b()", "i32"));
   Arena_free(&a);
 
-  a = Arena_create(256);
+  a = Arena_create(512);
   ts = (TypeStack){{}, 0, 0};
   assert(deduce_as__(&a, &ts, "fn fun1(x) {}", "(fn ((id x)) ({}))"));
   assert(deduce_as__(&a, &ts, "fn fun2(x) { return x }", "(fn ((id x)) ({} (return (id x))))"));
@@ -1818,7 +1834,7 @@ void gnq_deduce_function_calls() {
 void gnq_deduced_functions_are_listed() {
   printf("gnq_deduced_functions_are_listed\n");
 
-  Arena a = Arena_create(256);
+  Arena a = Arena_create(512);
   TypeStack ts = (TypeStack){{}, 0, 0};
   assert(deduce_as__(&a, &ts, "fn fun1(a, b) { return a }", "(fn ((id a) (id b)) ({} (return (id a))))"));
 
@@ -1828,6 +1844,11 @@ void gnq_deduced_functions_are_listed() {
   assert(1 == gnq_list_len(a.functions));
   assert(deduce_as__(&a, &ts, "fun1(3, 4)", "i32"));
   assert(1 == gnq_list_len(a.functions));
+
+  assert(deduce_as__(&a, &ts, "fun1(3, 4.0)", "i32"));
+  assert(2 == gnq_list_len(a.functions));
+  assert(deduce_as__(&a, &ts, "fun1(5, 6.0)", "i32"));
+  assert(2 == gnq_list_len(a.functions));
 
   Arena_free(&a);
 }
