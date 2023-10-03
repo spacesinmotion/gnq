@@ -348,7 +348,8 @@ Node *find_struct_type_for(Arena *a, Node *sub) {
   return NULL;
 }
 
-void gnq_add_deduced_function(Arena *a, Node *fn, Node *param_types[], int param_len) {
+Node unparsed_return = (Node){&nil, &nil};
+Node *gnq_add_deduced_function(Arena *a, Node *fn, Node *param_types[], int param_len) {
   Node *fns = a->functions;
   while (!gnq_is_nil(fns)) {
     Node *f = gnq_next(&fns);
@@ -358,6 +359,7 @@ void gnq_add_deduced_function(Arena *a, Node *fn, Node *param_types[], int param
     Node *deduced = gnq_cdr(f);
     while (!gnq_is_nil(deduced)) {
       Node *pl = gnq_next(&deduced);
+      Node *return_type = gnq_next(&pl);
       assert(gnq_list_len(pl) == param_len);
       if (gnq_list_len(pl) != param_len)
         continue;
@@ -365,10 +367,41 @@ void gnq_add_deduced_function(Arena *a, Node *fn, Node *param_types[], int param
       for (int i = 0; i < param_len && equal; ++i)
         equal = gnq_next(&pl) == param_types[i];
       if (equal)
-        return;
+        return return_type;
     }
   }
-  a->functions = gnq_cons(a, gnq_list(a, 2, fn, gnq_as_list(a, param_len, param_types)), a->functions);
+  Node *deduced_param = gnq_cons(a, &unparsed_return, gnq_as_list(a, param_len, param_types));
+  a->functions = gnq_cons(a, gnq_list(a, 2, fn, deduced_param), a->functions);
+  return &unparsed_return;
+}
+
+void gnq_replace_deduced_function_return(Arena *a, Node *fn, Node *param_types[], int param_len, Node *return_type) {
+  Node *fns = a->functions;
+  while (!gnq_is_nil(fns)) {
+    Node *f = gnq_next(&fns);
+    if (gnq_car(f) != fn)
+      continue;
+
+    Node *deduced = gnq_cdr(f);
+    while (!gnq_is_nil(deduced)) {
+      Node *pl_head = gnq_next(&deduced);
+      Node *pl = pl_head;
+      Node *stored_return = gnq_next(&pl);
+      assert(stored_return == &unparsed_return);
+      assert(gnq_list_len(pl) == param_len);
+      if (gnq_list_len(pl) != param_len)
+        continue;
+      bool equal = true;
+      for (int i = 0; i < param_len && equal; ++i)
+        equal = gnq_next(&pl) == param_types[i];
+      if (equal) {
+        assert(pl_head->car.n == &unparsed_return);
+        pl_head->car.n = return_type;
+        return;
+      }
+    }
+  }
+  assert(false);
 }
 
 void arena_test() {
@@ -1616,13 +1649,16 @@ Node *gnq_deduce_types(Arena *a, TypeStack *ts, Node *n, Node **rt) {
       // expect the same number of parameter
       assert(gnq_is_nil(fn_param) && gnq_is_nil(c_param));
 
-      Node *return_type = &nil;
-      gnq_deduce_types(a, ts, fn_scope, &return_type);
+      assert(!gnq_is_nil(this_fn));
+      Node *return_type = gnq_add_deduced_function(a, this_fn, param_types, param_len);
+      if (return_type == &unparsed_return) {
+        gnq_deduce_types(a, ts, fn_scope, &return_type);
+        if (return_type == &unparsed_return)
+          return_type = &nil;
+        gnq_replace_deduced_function_return(a, this_fn, param_types, param_len, return_type);
+      }
 
       TypeStack_revert(ts, ts_state);
-
-      assert(!gnq_is_nil(this_fn));
-      gnq_add_deduced_function(a, this_fn, param_types, param_len);
 
       return return_type;
     }
