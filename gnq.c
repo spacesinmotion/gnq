@@ -348,7 +348,8 @@ Node *find_struct_type_for(Arena *a, Node *sub) {
   return NULL;
 }
 
-Node unparsed_return = (Node){&nil, &nil};
+Node unparsed_return = (Node){.car = {.t = SymbolShort}, .cdr = {.ss = "<UNPAR>"}};
+Node parsing_return = (Node){.car = {.t = SymbolShort}, .cdr = {.ss = "<PARSI>"}};
 Node *gnq_add_deduced_function(Arena *a, Node *fn, Node *param_types[], int param_len) {
   Node *fns = a->functions;
   while (!gnq_is_nil(fns)) {
@@ -387,7 +388,7 @@ void gnq_replace_deduced_function_return(Arena *a, Node *fn, Node *param_types[]
       Node *pl_head = gnq_next(&deduced);
       Node *pl = pl_head;
       Node *stored_return = gnq_next(&pl);
-      assert(stored_return == &unparsed_return);
+      assert(stored_return == &unparsed_return || stored_return == &parsing_return);
       assert(gnq_list_len(pl) == param_len);
       if (gnq_list_len(pl) != param_len)
         continue;
@@ -395,7 +396,7 @@ void gnq_replace_deduced_function_return(Arena *a, Node *fn, Node *param_types[]
       for (int i = 0; i < param_len && equal; ++i)
         equal = gnq_next(&pl) == param_types[i];
       if (equal) {
-        assert(pl_head->car.n == &unparsed_return);
+        assert(pl_head->car.n == &unparsed_return || pl_head->car.n == &parsing_return);
         pl_head->car.n = return_type;
         return;
       }
@@ -1539,7 +1540,18 @@ Node *gnq_deduce_types(Arena *a, TypeStack *ts, Node *n, Node **rt) {
     if (strcmp(syms, "return") == 0) {
       if (!gnq_is_nil(n)) {
         assert(rt != NULL);
-        *rt = gnq_deduce_types(a, ts, gnq_next(&n), NULL);
+        Node *deduced_return = gnq_deduce_types(a, ts, gnq_next(&n), NULL);
+        assert(deduced_return != &unparsed_return);
+        if (*rt != &unparsed_return && deduced_return != &parsing_return) {
+          if (*rt != deduced_return) {
+            lisp_dbg("rt: ", *rt);
+            lisp_dbg("dt: ", deduced_return);
+#define EXPECT_EQUAL_RETURN_TYPE false
+            assert(EXPECT_EQUAL_RETURN_TYPE);
+          }
+        }
+        if (deduced_return != &parsing_return)
+          *rt = deduced_return;
       }
       return &nil;
     }
@@ -1652,6 +1664,8 @@ Node *gnq_deduce_types(Arena *a, TypeStack *ts, Node *n, Node **rt) {
       assert(!gnq_is_nil(this_fn));
       Node *return_type = gnq_add_deduced_function(a, this_fn, param_types, param_len);
       if (return_type == &unparsed_return) {
+        gnq_replace_deduced_function_return(a, this_fn, param_types, param_len, &parsing_return);
+
         gnq_deduce_types(a, ts, fn_scope, &return_type);
         if (return_type == &unparsed_return)
           return_type = &nil;
@@ -1688,7 +1702,7 @@ bool deduce_as__(Arena *a, TypeStack *ts, const char *gnq, const char *lisp) {
   Node *from_lisp = lisp_parse(a, lisp);
   Node *all = gnq_parse_all(a, &(State){gnq, {0, 0}});
   Node *deduced_gnq = NULL;
-  Node *return_type;
+  Node *return_type = &unparsed_return;
   while (!gnq_is_nil(all))
     deduced_gnq = gnq_deduce_types(a, ts, gnq_next(&all), &return_type);
   assert(deduced_gnq);
@@ -1889,6 +1903,31 @@ void gnq_deduced_functions_are_listed() {
   Arena_free(&a);
 }
 
+void gnq_deduced_functions_recursivly() {
+  printf("gnq_deduced_functions_recursivly\n");
+
+  Arena a = Arena_create(256);
+  TypeStack ts = (TypeStack){{}, 0, 0};
+  assert(deduce_as__(&a, &ts, "fn fun(a) { if (a==0) return 0 \n return fun(a-1) }", //
+                     "(fn ((id a)) ({} (if (== (id a) 0) (return 0)) (return (call (id fun) ((- (id a) 1))))))"));
+  assert(deduce_as__(&a, &ts, "fun(1)", "i32"));
+  Arena_free(&a);
+
+  a = Arena_create(256);
+  ts = (TypeStack){{}, 0, 0};
+  assert(deduce_as__(&a, &ts, "fn fun(a) { if (a>0) return fun(a-1) \n return 0 }", //
+                     "(fn ((id a)) ({} (if (> (id a) 0) (return (call (id fun) ((- (id a) 1))))) (return 0)))"));
+  assert(deduce_as__(&a, &ts, "fun(1)", "i32"));
+  Arena_free(&a);
+
+  // a = Arena_create(256);
+  // ts = (TypeStack){{}, 0, 0};
+  // assert(deduce_as__(&a, &ts, "fn fun(a) { if (a>0) return 1 + fun(a-1) \n return 0 }", //
+  //                    "(fn ((id a)) ({} (if (> (id a) 0) (return (+ 1 (call (id fun) ((- (id a) 1)))))) (return 0)))"));
+  // assert(deduce_as__(&a, &ts, "fun(1)", "i32"));
+  // Arena_free(&a);
+}
+
 void gnq_eval_test() {
   printf("gnq_eval_test\n");
 
@@ -1978,6 +2017,7 @@ int main() {
   gnq_deduce_array_access();
   gnq_deduce_function_calls();
   gnq_deduced_functions_are_listed();
+  gnq_deduced_functions_recursivly();
 
   gnq_test_files();
 
