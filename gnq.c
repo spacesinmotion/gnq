@@ -283,26 +283,31 @@ bool gnq_is_call(Node *n, const char *sym) {
 
 bool gnq_is_nil(Node *n) { return n == &nil; }
 
-Node *gnq_list(Arena *a, int count, ...) {
-  Node *nodes[16];
-
-  va_list argp;
-  va_start(argp, count);
-  for (int i = 0; i < count; ++i)
-    nodes[i] = va_arg(argp, Node *);
-  va_end(argp);
-
+Node *gnq_as_list(Arena *a, int count, Node *nodes[]) {
   Node *n = &nil;
   for (int i = count - 1; i >= 0; --i)
     n = gnq_cons(a, nodes[i], n);
   return n;
 }
+Node *gnq_list(Arena *a, int count, ...) {
+  Node *nodes[16];
+
+  va_list argp;
+  va_start(argp, count);
+  for (int i = 0; i < count; ++i) {
+    assert(i < 16);
+    nodes[i] = va_arg(argp, Node *);
+  }
+  va_end(argp);
+
+  return gnq_as_list(a, count, nodes);
+}
+
 Node *gnq_next(Node **list) {
   Node *n = gnq_car(*list);
   *list = gnq_cdr(*list);
   return n;
 }
-
 int gnq_list_len(Node *n) {
   int len = 0;
   while (!gnq_is_nil(n)) {
@@ -343,13 +348,13 @@ Node *find_struct_type_for(Arena *a, Node *sub) {
   return NULL;
 }
 
-void gnq_add_deduced_function(Arena *a, Node *fn) {
+void gnq_add_deduced_function(Arena *a, Node *fn, Node *param_types[], int param_len) {
   Node *fns = a->functions;
   while (!gnq_is_nil(fns))
     if (gnq_car(gnq_next(&fns)) == fn)
       return;
 
-  a->functions = gnq_cons(a, gnq_list(a, 1, fn), a->functions);
+  a->functions = gnq_cons(a, gnq_list(a, 2, fn, gnq_as_list(a, param_len, param_types)), a->functions);
 }
 
 void arena_test() {
@@ -1581,12 +1586,17 @@ Node *gnq_deduce_types(Arena *a, TypeStack *ts, Node *n, Node **rt) {
 
       int ts_state = TypeStack_state(ts);
 
+      Node *param_types[128];
+      int param_len = 0;
       while (!gnq_is_nil(fn_param) && !gnq_is_nil(c_param)) {
         Node *p_id = gnq_next(&fn_param);
         assert(gnq_is_call(p_id, "id"));
         Node *c_type = gnq_deduce_types(a, ts, gnq_next(&c_param), rt);
         assert(!gnq_is_nil(c_type));
         TypeStack_push(ts, gnq_id_sym(p_id), c_type);
+
+        assert(param_len < 128);
+        param_types[param_len++] = c_type;
       }
       // expect the same number of parameter
       assert(gnq_is_nil(fn_param) && gnq_is_nil(c_param));
@@ -1596,7 +1606,7 @@ Node *gnq_deduce_types(Arena *a, TypeStack *ts, Node *n, Node **rt) {
 
       TypeStack_revert(ts, ts_state);
 
-      gnq_add_deduced_function(a, fn);
+      gnq_add_deduced_function(a, fn, param_types, param_len);
 
       return return_type;
     }
