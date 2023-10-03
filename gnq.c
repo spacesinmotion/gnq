@@ -1261,8 +1261,8 @@ void parser_gnq_functions_test() {
   assert(parse_as_(&a, "fn func() {}", "(:= (id func) (fn () ({})))"));
   assert(parse_as_(&a, "fn func(a) {}", "(:= (id func) (fn ((id a)) ({})))"));
   assert(parse_as_(&a, "fn func(a, b, c) {}", "(:= (id func) (fn ((id a) (id b) (id c)) ({})))"));
-  assert(
-      parse_as_(&a, "fn func(a) { a+=2 return a }", "(:= (id func) (fn ((id a)) ({} (+= (id a) 2) (return (id a)))))"));
+  assert(parse_as_(&a, "fn func(a) { a+=2 return a }", //
+                   "(:= (id func) (fn ((id a)) ({} (+= (id a) 2) (return (id a)))))"));
 
   Arena_free(&a);
 }
@@ -1618,6 +1618,7 @@ bool deduce_as__(Arena *a, TypeStack *ts, const char *gnq, const char *lisp) {
   printf("expect '%s' got '%s'\n", b1, b2);
   return false;
 }
+
 bool deduce_as_(Arena *a, const char *gnq, const char *lisp) {
   TypeStack ts = (TypeStack){{}, 0, 0};
   return deduce_as__(a, &ts, gnq, lisp);
