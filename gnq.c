@@ -171,6 +171,7 @@ typedef struct Arena {
 
   Node *arrays;
   Node *structs;
+  Node *functions;
 } Arena;
 
 Node nil = (Node){NULL, NULL};
@@ -178,7 +179,7 @@ Node *SYM_ARR = &(Node){.car = {.t = SymbolShort}, .cdr = {.ss = "[_]"}};
 Node *SYM_STRUCT = &(Node){.car = {.t = SymbolShort}, .cdr = {.ss = "{_}"}};
 
 Arena Arena_create(size_t nb_nodes) {
-  return (Arena){(Node *)malloc(nb_nodes * sizeof(Node)), 0, nb_nodes, &nil, &nil};
+  return (Arena){(Node *)malloc(nb_nodes * sizeof(Node)), 0, nb_nodes, &nil, &nil, &nil};
 }
 
 void Arena_free(Arena *a) {
@@ -302,6 +303,15 @@ Node *gnq_next(Node **list) {
   return n;
 }
 
+int gnq_list_len(Node *n) {
+  int len = 0;
+  while (!gnq_is_nil(n)) {
+    gnq_next(&n);
+    ++len;
+  }
+  return len;
+}
+
 Node *gnq_create_array_type_for(Arena *a, Node *sub) {
   Node *arr = a->arrays;
   while (!gnq_is_nil(arr)) {
@@ -331,6 +341,15 @@ Node *find_struct_type_for(Arena *a, Node *sub) {
       return x;
   }
   return NULL;
+}
+
+void gnq_add_deduced_function(Arena *a, Node *fn) {
+  Node *fns = a->functions;
+  while (!gnq_is_nil(fns))
+    if (gnq_car(gnq_next(&fns)) == fn)
+      return;
+
+  a->functions = gnq_cons(a, gnq_list(a, 1, fn), a->functions);
 }
 
 void arena_test() {
@@ -1576,6 +1595,9 @@ Node *gnq_deduce_types(Arena *a, TypeStack *ts, Node *n, Node **rt) {
       gnq_deduce_types(a, ts, fn_scope, &return_type);
 
       TypeStack_revert(ts, ts_state);
+
+      gnq_add_deduced_function(a, fn);
+
       return return_type;
     }
 
@@ -1783,6 +1805,23 @@ void gnq_deduce_function_calls() {
   Arena_free(&a);
 }
 
+void gnq_deduced_functions_are_listed() {
+  printf("gnq_deduced_functions_are_listed\n");
+
+  Arena a = Arena_create(256);
+  TypeStack ts = (TypeStack){{}, 0, 0};
+  assert(deduce_as__(&a, &ts, "fn fun1(a, b) { return a }", "(fn ((id a) (id b)) ({} (return (id a))))"));
+
+  assert(gnq_is_nil(a.functions));
+  assert(0 == gnq_list_len(a.functions));
+  assert(deduce_as__(&a, &ts, "fun1(1, 2)", "i32"));
+  assert(1 == gnq_list_len(a.functions));
+  assert(deduce_as__(&a, &ts, "fun1(3, 4)", "i32"));
+  assert(1 == gnq_list_len(a.functions));
+
+  Arena_free(&a);
+}
+
 void gnq_eval_test() {
   printf("gnq_eval_test\n");
 
@@ -1871,6 +1910,7 @@ int main() {
   gnq_deduce_struct_member();
   gnq_deduce_array_access();
   gnq_deduce_function_calls();
+  gnq_deduced_functions_are_listed();
 
   gnq_test_files();
 
