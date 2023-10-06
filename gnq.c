@@ -1498,6 +1498,10 @@ Node *gnq_deduce_types(Arena *a, TypeStack *ts, Node *n, Node **rt) {
       return gnq_create_array_type_for(a, sub);
     }
 
+    if (strcmp(syms, "BR") == 0) {
+      return gnq_deduce_types(a, ts, gnq_next(&n), rt);
+    }
+
     if (strcmp(syms, "[]") == 0) {
       Node *array_type = gnq_deduce_types(a, ts, gnq_next(&n), rt);
       assert(gnq_is_call(array_type, "[_]"));
@@ -1738,6 +1742,9 @@ void gnq_deduce_types_test() {
   assert(deduce_as_(&a, "42 == 21", "bool"));
   assert(deduce_as_(&a, "42 < 21", "bool"));
 
+  assert(deduce_as_(&a, "(42 + 21)", "i32"));
+  assert(deduce_as_(&a, "(2 + 1) * 4", "i32"));
+
   assert(deduce_as_(&a, "a := 21", "i32"));
   assert(deduce_as_(&a, "a := 2.1\n a", "f64"));
 
@@ -1923,7 +1930,8 @@ void gnq_deduced_functions_recursivly() {
   // a = Arena_create(256);
   // ts = (TypeStack){{}, 0, 0};
   // assert(deduce_as__(&a, &ts, "fn fun(a) { if (a>0) return 1 + fun(a-1) \n return 0 }", //
-  //                    "(fn ((id a)) ({} (if (> (id a) 0) (return (+ 1 (call (id fun) ((- (id a) 1)))))) (return 0)))"));
+  //                    "(fn ((id a)) ({} (if (> (id a) 0) (return (+ 1 (call (id fun) ((- (id a) 1)))))) (return
+  //                    0)))"));
   // assert(deduce_as__(&a, &ts, "fun(1)", "i32"));
   // Arena_free(&a);
 }
