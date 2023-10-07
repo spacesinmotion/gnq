@@ -2135,11 +2135,27 @@ Node *gnq_mod_find(Node *mo, const char *id_name) {
   return NULL;
 }
 
-size_t gnq_to_c_expression(Arena *a, Node *stat, char *b, size_t s) {
+size_t gnq_to_c_expression(Arena *a, Node *expr, char *b, size_t s) {
   size_t p = 0;
 
-  if (gnq_type(stat) == NumberInt) {
-    p += snprintf(b + p, s - p, SLD, gnq_toint(stat));
+  if (gnq_type(expr) == NumberInt) {
+    p += snprintf(b + p, s - p, SLD, gnq_toint(expr));
+  } else if (gnq_type(expr) == NumberFloat) {
+    p += snprintf(b + p, s - p, "%g", gnq_tofloat(expr));
+  } else if (gnq_type(expr) == Bool) {
+    p += snprintf(b + p, s - p, "%s", gnq_tobool(expr) ? "true" : "false");
+  } else {
+    for (size_t i = 0; i < sizeof(ops) / sizeof(ops[0]); ++i)
+      if (gnq_is_call(expr, ops[i].op)) {
+        gnq_next(&expr);
+        p += gnq_to_c_expression(a, gnq_next(&expr), b + p, s - p);
+        p += snprintf(b + p, s - p, "%s", ops[i].op);
+        p += gnq_to_c_expression(a, gnq_next(&expr), b + p, s - p);
+        return p;
+      }
+
+#define UNKNWON_C_EXPRESSION false
+    assert(UNKNWON_C_EXPRESSION);
   }
 
   return p;
@@ -2162,6 +2178,9 @@ size_t gnq_to_c_statement(Arena *a, Node *stat, char *b, size_t s) {
       p += gnq_to_c_expression(a, gnq_next(&stat), b + p, s - p);
     }
     p += snprintf(b + p, s - p, ";");
+  } else {
+#define UNKNWON_C_STATEMENT false
+    assert(UNKNWON_C_STATEMENT);
   }
 
   return p;
@@ -2171,7 +2190,6 @@ size_t gnq_to_c_fn(Arena *a, Node *fn, char *b, size_t s) {
   assert(gnq_is_call(fn, "fn"));
 
   Node *scope = gnq_car(gnq_cdr(gnq_cdr(fn)));
-  lisp_dbg("scope ", scope);
   Node *a_deduced = gnq_cdr(gnq_cdr(gnq_cdr(fn)));
   size_t p = 0;
   while (!gnq_is_nil(a_deduced)) {
@@ -2223,9 +2241,11 @@ void gnq_convert_to_c() {
   printf("gnq_convert_to_c\n");
 
   Arena a = Arena_create(256);
-  TypeStack ts = (TypeStack){{}, 0, 0};
   assert(write_c_(&a, "fn main() {return 0}", "i32 f11(){return 0;}"));
+  Arena_free(&a);
 
+  a = Arena_create(256);
+  assert(write_c_(&a, "fn main() {return 1+3*4}", "i32 f11(){return 1+3*4;}"));
   Arena_free(&a);
 }
 
