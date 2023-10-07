@@ -13,6 +13,12 @@
 
 typedef uintptr_t ptr_size;
 
+#ifdef _WIN32
+#define SLD "%lld"
+#else
+#define SLD "%ld"
+#endif
+
 typedef struct Location {
   uint16_t line;
   uint16_t column;
@@ -433,6 +439,16 @@ const char *gnq_fn_c_name(Arena *a, Node *fn, Node *param_types[], int param_len
   return "";
 }
 
+const char *gnq_fn_c_name_(Arena *a, Node *fn, Node *paraml) {
+  Node *param[128];
+  int param_len = 0;
+  while (!gnq_is_nil(paraml)) {
+    assert(param_len < 128);
+    param[param_len++] = gnq_next(&paraml);
+  }
+  return gnq_fn_c_name(a, fn, param, param_len);
+}
+
 int gnq_list_entry(Node *l, Node *n) {
   int h = 0;
   while (!gnq_is_nil(l)) {
@@ -813,11 +829,7 @@ size_t lisp_str(char *b, size_t s, Node *a) {
   assert(a);
 
   if (gnq_type(a) == NumberInt)
-#ifdef _WIN32
-    return snprintf(b, s, "%lld", gnq_toint(a));
-#else
-    return snprintf(b, s, "%ld", gnq_toint(a));
-#endif
+    return snprintf(b, s, SLD, gnq_toint(a));
   if (gnq_type(a) == NumberFloat)
     return snprintf(b, s, "%g", gnq_tofloat(a));
   if (gnq_type(a) == Bool)
@@ -1428,6 +1440,12 @@ Node *gnq_parse_all(Arena *a, State *st) {
     }
   }
   return stat;
+}
+
+Node SYM_MOD = (Node){{.t = SymbolShort}, {.ss = "mod"}};
+Node *gnq_parse_mod(Arena *a, State *st) {
+  Node *all = gnq_parse_all(a, st);
+  return gnq_cons(a, &SYM_MOD, all);
 }
 
 void some_func(int v, const char *t) { printf("- %d '%s'\n", v, t); }
@@ -2103,8 +2121,118 @@ void gnq_test_files() {
 #endif
 }
 
+Node *gnq_mod_find(Node *mo, const char *id_name) {
+  Node *sym = gnq_next(&mo);
+  assert(sym == &SYM_MOD);
+  while (!gnq_is_nil(mo)) {
+    Node *assign = gnq_next(&mo);
+    assert(gnq_is_call(assign, ":="));
+    Node *id = gnq_car(gnq_cdr(assign));
+    assert(gnq_is_call(id, "id"));
+    if (strcmp(gnq_id_sym(id), id_name) == 0)
+      return gnq_car(gnq_cdr(gnq_cdr(assign)));
+  }
+  return NULL;
+}
+
+size_t gnq_to_c_expression(Arena *a, Node *stat, char *b, size_t s) {
+  size_t p = 0;
+
+  if (gnq_type(stat) == NumberInt) {
+    p += snprintf(b + p, s - p, SLD, gnq_toint(stat));
+  }
+
+  return p;
+}
+
+size_t gnq_to_c_statement(Arena *a, Node *stat, char *b, size_t s) {
+  size_t p = 0;
+
+  if (gnq_is_call(stat, "{}")) {
+    gnq_next(&stat);
+    p += snprintf(b + p, s - p, "{");
+    while (!gnq_is_nil(stat))
+      p += gnq_to_c_statement(a, gnq_next(&stat), b + p, s - p);
+    p += snprintf(b + p, s - p, "}");
+  } else if (gnq_is_call(stat, "return")) {
+    gnq_next(&stat);
+    p += snprintf(b + p, s - p, "return");
+    if (!gnq_is_nil(stat)) {
+      p += snprintf(b + p, s - p, " ");
+      p += gnq_to_c_expression(a, gnq_next(&stat), b + p, s - p);
+    }
+    p += snprintf(b + p, s - p, ";");
+  }
+
+  return p;
+}
+
+size_t gnq_to_c_fn(Arena *a, Node *fn, char *b, size_t s) {
+  assert(gnq_is_call(fn, "fn"));
+
+  Node *scope = gnq_car(gnq_cdr(gnq_cdr(fn)));
+  lisp_dbg("scope ", scope);
+  Node *a_deduced = gnq_cdr(gnq_cdr(gnq_cdr(fn)));
+  size_t p = 0;
+  while (!gnq_is_nil(a_deduced)) {
+    Node *fnd = gnq_next(&a_deduced);
+    Node *rt = gnq_next(&fnd);
+    assert(gnq_is_sym(rt));
+    Node *param = fnd;
+    const char *fn_name = gnq_fn_c_name_(a, fn, param);
+    assert(fn_name && *fn_name);
+
+    p += snprintf(b + p, s - p, "%s %s()", gnq_tosym(rt), fn_name);
+    p += gnq_to_c_statement(a, scope, b + p, s - p);
+  }
+  return 0;
+}
+
+size_t gnq_to_c(Arena *a, char *b, size_t s) {
+  Node *fns = a->functions;
+  size_t p = 0;
+  while (!gnq_is_nil(fns))
+    p += gnq_to_c_fn(a, gnq_next(&fns), b + p, s - p);
+  return p;
+}
+
+bool write_c_(Arena *a, const char *gnq, const char *c) {
+  Node *mod = gnq_parse_mod(a, &(State){gnq, {0, 0}});
+  Node *main = gnq_mod_find(mod, "main");
+  assert(main && gnq_is_call(main, "fn"));
+
+  TypeStack ts = (TypeStack){{}, 0, 0};
+  TypeStack_push(&ts, "main", main);
+  Node *dummy_main_call = gnq_parse_statement(a, &(State){"main()", {0, 0}});
+
+  Node *return_type = &unparsed_return;
+  Node *main_return_type = gnq_deduce_types(a, &ts, dummy_main_call, &return_type);
+  assert(main_return_type == &i32);
+  assert(!gnq_is_nil(a->functions));
+
+  char code[256] = {0};
+  gnq_to_c(a, code, sizeof(code));
+  if (strcmp(code, c) == 0)
+    return true;
+
+  printf("expect '%s' got '%s'\n", c, code);
+  return false;
+}
+
+void gnq_convert_to_c() {
+  printf("gnq_convert_to_c\n");
+
+  Arena a = Arena_create(256);
+  TypeStack ts = (TypeStack){{}, 0, 0};
+  assert(write_c_(&a, "fn main() {return 0}", "i32 f11(){return 0;}"));
+
+  Arena_free(&a);
+}
+
 int main() {
   assert(sizeof(ptr_size) == sizeof(void *));
+
+  gnq_test_files();
 
   arena_test();
   list_test();
@@ -2125,7 +2253,7 @@ int main() {
   gnq_deduced_functions_are_listed();
   gnq_deduced_functions_recursivly();
 
-  gnq_test_files();
+  gnq_convert_to_c();
 
   printf("ok\n");
   return 0;
