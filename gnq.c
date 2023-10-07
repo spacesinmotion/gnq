@@ -351,20 +351,29 @@ Node *find_struct_type_for(Arena *a, Node *sub) {
 Node unparsed_return = (Node){.car = {.t = SymbolShort}, .cdr = {.ss = "<UNPAR>"}};
 Node parsing_return = (Node){.car = {.t = SymbolShort}, .cdr = {.ss = "<PARSI>"}};
 
-Node *gnq_add_deduced_function(Arena *a, Node *fn, Node *param_types[], int param_len) {
+Node *gnq_fn_find_deduced(Node *fn, Node *param_types[], int param_len) {
   Node *a_deduced = gnq_cdr(gnq_cdr(gnq_cdr(fn)));
   while (!gnq_is_nil(a_deduced)) {
-    Node *d = gnq_next(&a_deduced);
-    Node *return_type = gnq_next(&d);
+    Node *pl_head = gnq_next(&a_deduced);
+    Node *d = pl_head;
+    gnq_next(&d);
     if (gnq_list_len(d) != param_len)
       continue;
     bool equal = true;
     for (int i = 0; i < param_len && equal; ++i)
       equal = gnq_next(&d) == param_types[i];
     if (equal)
-      return return_type;
+      return pl_head;
   }
+  return NULL;
+}
 
+Node *gnq_add_deduced_function(Arena *a, Node *fn, Node *param_types[], int param_len) {
+  Node *deduced_types = gnq_fn_find_deduced(fn, param_types, param_len);
+  if (deduced_types)
+    return gnq_next(&deduced_types);
+
+  Node *a_deduced = gnq_cdr(gnq_cdr(gnq_cdr(fn)));
   Node *deduced_param = gnq_cons(a, &unparsed_return, gnq_as_list(a, param_len, param_types));
   Node *a_deduced_head = gnq_cdr(gnq_cdr(fn));
   a_deduced_head->cdr.n = gnq_cons(a, deduced_param, a_deduced_head->cdr.n);
@@ -379,25 +388,11 @@ Node *gnq_add_deduced_function(Arena *a, Node *fn, Node *param_types[], int para
   return &unparsed_return;
 }
 
-void gnq_replace_deduced_function_return(Arena *aa, Node *fn, Node *param_types[], int param_len, Node *return_type) {
-  Node *a_deduced = gnq_cdr(gnq_cdr(gnq_cdr(fn)));
-  while (!gnq_is_nil(a_deduced)) {
-    Node *pl_head = gnq_next(&a_deduced);
-    Node *d = pl_head;
-    gnq_next(&d);
-    if (gnq_list_len(d) != param_len)
-      continue;
-    bool equal = true;
-    for (int i = 0; i < param_len && equal; ++i)
-      equal = gnq_next(&d) == param_types[i];
-    if (equal) {
-      assert(pl_head->car.n == &unparsed_return || pl_head->car.n == &parsing_return);
-      pl_head->car.n = return_type;
-      return;
-    }
-  }
-
-  assert(false);
+void gnq_replace_deduced_function_return(Node *fn, Node *param_types[], int param_len, Node *return_type) {
+  Node *deduced_types = gnq_fn_find_deduced(fn, param_types, param_len);
+  assert(deduced_types);
+  assert(deduced_types->car.n == &unparsed_return || deduced_types->car.n == &parsing_return);
+  deduced_types->car.n = return_type;
 }
 
 void arena_test() {
@@ -1663,12 +1658,12 @@ Node *gnq_deduce_types(Arena *a, TypeStack *ts, Node *n, Node **rt) {
       assert(!gnq_is_nil(this_fn));
       Node *return_type = gnq_add_deduced_function(a, this_fn, param_types, param_len);
       if (return_type == &unparsed_return) {
-        gnq_replace_deduced_function_return(a, this_fn, param_types, param_len, &parsing_return);
+        gnq_replace_deduced_function_return(this_fn, param_types, param_len, &parsing_return);
 
         gnq_deduce_types(a, ts, fn_scope, &return_type);
         if (return_type == &unparsed_return)
           return_type = &nil;
-        gnq_replace_deduced_function_return(a, this_fn, param_types, param_len, return_type);
+        gnq_replace_deduced_function_return(this_fn, param_types, param_len, return_type);
       }
 
       TypeStack_revert(ts, ts_state);
@@ -1893,17 +1888,26 @@ void gnq_deduced_functions_are_listed() {
 
   assert(gnq_is_nil(a.functions));
   assert(0 == gnq_list_len(a.functions));
+
   assert(deduce_as__(&a, &ts, "fun1(1, 2)", "i32"));
   assert(1 == gnq_list_len(a.functions));
+  assert(NULL != gnq_fn_find_deduced(gnq_car(a.functions), (Node *[]){&i32, &i32}, 2));
+  assert(NULL == gnq_fn_find_deduced(gnq_car(a.functions), (Node *[]){&i32, &f64}, 2));
+
   assert(deduce_as__(&a, &ts, "fun1(3, 4)", "i32"));
   assert(1 == gnq_list_len(a.functions));
   assert(deduce_as__(&a, &ts, "fun1(3, 4.0)", "i32"));
   assert(1 == gnq_list_len(a.functions));
+  assert(NULL != gnq_fn_find_deduced(gnq_car(a.functions), (Node *[]){&i32, &f64}, 2));
 
   assert(deduce_as__(&a, &ts, "fun2(5)", "i32"));
   assert(2 == gnq_list_len(a.functions));
+  assert(NULL != gnq_fn_find_deduced(gnq_car(a.functions), (Node *[]){&i32}, 1));
+  assert(NULL == gnq_fn_find_deduced(gnq_car(a.functions), (Node *[]){&f64}, 1));
   assert(deduce_as__(&a, &ts, "fun2(5.0)", "i32"));
   assert(2 == gnq_list_len(a.functions));
+  assert(NULL != gnq_fn_find_deduced(gnq_car(a.functions), (Node *[]){&i32}, 1));
+  assert(NULL != gnq_fn_find_deduced(gnq_car(a.functions), (Node *[]){&f64}, 1));
 
   assert(deduce_as__(&a, &ts, "fun1(5, 6.0)", "i32"));
   assert(2 == gnq_list_len(a.functions));
