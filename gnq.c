@@ -402,6 +402,38 @@ void gnq_replace_deduced_function_return(Node *fn, Node *param_types[], int para
   deduced_types->car.n = return_type;
 }
 
+char name_buff[256];
+const char *gnq_fn_c_name(Arena *a, Node *fn, Node *param_types[], int param_len) {
+  int h = 0;
+  Node *fns = a->functions;
+  while (!gnq_is_nil(fns)) {
+    ++h;
+    if (gnq_next(&fns) != fn)
+      continue;
+
+    int t = 0;
+    Node *a_deduced = gnq_cdr(gnq_cdr(gnq_cdr(fn)));
+    while (!gnq_is_nil(a_deduced)) {
+      ++t;
+      Node *d = gnq_next(&a_deduced);
+      gnq_next(&d);
+      if (gnq_list_len(d) != param_len)
+        continue;
+      bool equal = true;
+      for (int i = 0; i < param_len && equal; ++i)
+        equal = gnq_next(&d) == param_types[i];
+      if (equal) {
+        snprintf(name_buff, sizeof(name_buff), "_%x%x", h, t);
+        return name_buff;
+      }
+    }
+  }
+
+  assert(false);
+  name_buff[0] = '\0';
+  return name_buff;
+}
+
 void arena_test() {
   printf("arena_test\n");
 
@@ -1921,6 +1953,13 @@ void gnq_deduced_functions_are_listed() {
 
   assert(deduce_as__(&a, &ts, "fun1(5, 6.0)", "i32"));
   assert(2 == gnq_list_len(a.functions));
+
+  Node *fun2 = gnq_car(a.functions);
+  Node *fun1 = gnq_car(gnq_cdr(a.functions));
+  assert(strcmp("_11", gnq_fn_c_name(&a, fun2, (Node *[]){&f64}, 1)) == 0);
+  assert(strcmp("_12", gnq_fn_c_name(&a, fun2, (Node *[]){&i32}, 1)) == 0);
+  assert(strcmp("_21", gnq_fn_c_name(&a, fun1, (Node *[]){&i32, &f64}, 2)) == 0);
+  assert(strcmp("_22", gnq_fn_c_name(&a, fun1, (Node *[]){&i32, &i32}, 2)) == 0);
 
   Arena_free(&a);
 }
