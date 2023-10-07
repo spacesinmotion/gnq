@@ -423,12 +423,27 @@ const char *gnq_fn_c_name(Arena *a, Node *fn, Node *param_types[], int param_len
       for (int i = 0; i < param_len && equal; ++i)
         equal = gnq_next(&d) == param_types[i];
       if (equal) {
-        snprintf(name_buff, sizeof(name_buff), "_%x%x", h, t);
+        snprintf(name_buff, sizeof(name_buff), "f%x%x", h, t);
         return name_buff;
       }
     }
   }
 
+  assert(false);
+  name_buff[0] = '\0';
+  return name_buff;
+}
+
+const char *gnq_struct_c_name(Arena *a, Node *st) {
+  Node *strc = a->structs;
+  int h = 0;
+  while (!gnq_is_nil(strc)) {
+    ++h;
+    if (gnq_next(&strc) == st) {
+      snprintf(name_buff, sizeof(name_buff), "s%x", h);
+      return name_buff;
+    }
+  }
   assert(false);
   name_buff[0] = '\0';
   return name_buff;
@@ -1868,9 +1883,20 @@ void gnq_deduce_struct_member() {
   Arena a = Arena_create(256);
   TypeStack ts = (TypeStack){{}, 0, 0};
   assert(deduce_as__(&a, &ts, "a := { b = 42 }", "({_} (b i32))"));
+  assert(deduce_as__(&a, &ts, "x := { b = 4.2, z=true, a = a}", "({_} (a ({_} (b i32))) (z bool) (b f64))"));
   assert(deduce_as__(&a, &ts, "a", "({_} (b i32))"));
   assert(deduce_as__(&a, &ts, "a.b", "i32"));
+  assert(deduce_as__(&a, &ts, "x.b", "f64"));
+  assert(deduce_as__(&a, &ts, "x.z", "bool"));
+  assert(deduce_as__(&a, &ts, "x.a", "({_} (b i32))"));
+  assert(deduce_as__(&a, &ts, "x.a.b", "i32"));
 
+  Node *st1 = gnq_car(a.structs);
+  Node *st2 = gnq_car(gnq_cdr(a.structs));
+  assert(gnq_equal(lisp_parse(&a, "({_} (b i32))"), st2));
+  assert(gnq_equal(lisp_parse(&a, "({_} (a ({_} (b i32))) (z bool) (b f64))"), st1));
+  assert(strcmp("s1", gnq_struct_c_name(&a, st1)) == 0);
+  assert(strcmp("s2", gnq_struct_c_name(&a, st2)) == 0);
   Arena_free(&a);
 }
 
@@ -1956,10 +1982,10 @@ void gnq_deduced_functions_are_listed() {
 
   Node *fun2 = gnq_car(a.functions);
   Node *fun1 = gnq_car(gnq_cdr(a.functions));
-  assert(strcmp("_11", gnq_fn_c_name(&a, fun2, (Node *[]){&f64}, 1)) == 0);
-  assert(strcmp("_12", gnq_fn_c_name(&a, fun2, (Node *[]){&i32}, 1)) == 0);
-  assert(strcmp("_21", gnq_fn_c_name(&a, fun1, (Node *[]){&i32, &f64}, 2)) == 0);
-  assert(strcmp("_22", gnq_fn_c_name(&a, fun1, (Node *[]){&i32, &i32}, 2)) == 0);
+  assert(strcmp("f11", gnq_fn_c_name(&a, fun2, (Node *[]){&f64}, 1)) == 0);
+  assert(strcmp("f12", gnq_fn_c_name(&a, fun2, (Node *[]){&i32}, 1)) == 0);
+  assert(strcmp("f21", gnq_fn_c_name(&a, fun1, (Node *[]){&i32, &f64}, 2)) == 0);
+  assert(strcmp("f22", gnq_fn_c_name(&a, fun1, (Node *[]){&i32, &i32}, 2)) == 0);
 
   Arena_free(&a);
 }
