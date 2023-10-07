@@ -430,22 +430,32 @@ const char *gnq_fn_c_name(Arena *a, Node *fn, Node *param_types[], int param_len
   }
 
   assert(false);
-  name_buff[0] = '\0';
-  return name_buff;
+  return "";
+}
+
+int gnq_list_entry(Node *l, Node *n) {
+  int h = 0;
+  while (!gnq_is_nil(l)) {
+    ++h;
+    if (gnq_next(&l) == n)
+      return h;
+  }
+  return -1;
 }
 
 const char *gnq_struct_c_name(Arena *a, Node *st) {
-  Node *strc = a->structs;
-  int h = 0;
-  while (!gnq_is_nil(strc)) {
-    ++h;
-    if (gnq_next(&strc) == st) {
-      snprintf(name_buff, sizeof(name_buff), "s%x", h);
-      return name_buff;
-    }
-  }
-  assert(false);
   name_buff[0] = '\0';
+  int entry = gnq_list_entry(a->structs, st);
+  assert(entry >= 0);
+  snprintf(name_buff, sizeof(name_buff), "s%x", entry);
+  return name_buff;
+}
+
+const char *gnq_array_c_name(Arena *a, Node *st) {
+  name_buff[0] = '\0';
+  int entry = gnq_list_entry(a->arrays, st);
+  assert(entry >= 0);
+  snprintf(name_buff, sizeof(name_buff), "a%x", entry);
   return name_buff;
 }
 
@@ -1913,6 +1923,14 @@ void gnq_deduce_array_access() {
   assert(deduce_as__(&a, &ts, "b", "([_] ([_] i32))"));
   assert(deduce_as__(&a, &ts, "b[0]", "([_] i32)"));
   assert(deduce_as__(&a, &ts, "b[0][1]", "i32"));
+
+  Node *a1 = gnq_car(a.arrays);
+  Node *a2 = gnq_car(gnq_cdr(a.arrays));
+  assert(gnq_equal(lisp_parse(&a, "([_] ([_] i32))"), a1));
+  assert(gnq_equal(lisp_parse(&a, "([_] i32)"), a2));
+  assert(strcmp("a1", gnq_array_c_name(&a, a1)) == 0);
+  assert(strcmp("a2", gnq_array_c_name(&a, a2)) == 0);
+  Arena_free(&a);
 
   Arena_free(&a);
 }
