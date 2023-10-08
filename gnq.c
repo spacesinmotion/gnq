@@ -127,6 +127,8 @@ BinOp *getop(const char *ch) {
   return NULL;
 }
 
+const char *un_pre_ops[] = {"++", "--", "*", "~", "!", "-", "+", "&"};
+
 typedef struct Node Node;
 
 typedef enum ValueType {
@@ -993,7 +995,6 @@ Node *gnq_parse_unary_operand(Arena *a, State *st) {
   else if ((unary = gnq_parse_id(a, st)))
     ;
 
-  const char *un_pre_ops[] = {"++", "--", "*", "~", "!", "-", "+", "&"};
   for (size_t i = 0; !unary && i < sizeof(un_pre_ops) / sizeof(const char *); ++i) {
     if (check_op(st, un_pre_ops[i])) {
       Node *op = gnq_parse_unary_operand(a, st);
@@ -1753,6 +1754,17 @@ Node *gnq_deduce_types(Arena *a, TypeStack *ts, Node *n, Node **rt) {
       return return_type;
     }
 
+    if (1 == gnq_list_len(n)) {
+      for (size_t i = 0; i < sizeof(un_pre_ops) / sizeof(un_pre_ops[0]); ++i)
+        if (strcmp(un_pre_ops[i], syms) == 0) {
+          Node *t1 = gnq_deduce_types(a, ts, gnq_next(&n), rt);
+          if (strcmp(un_pre_ops[i], "!") == 0)
+            return &boolean;
+          // check if unary op is deref, ref
+          assert(strcmp(un_pre_ops[i], "*") != 0 && strcmp(un_pre_ops[i], "&") != 0);
+          return t1;
+        }
+    }
     const BinOp *op = NULL;
     for (size_t i = 0; i < sizeof(ops) / sizeof(ops[0]); ++i)
       if (strcmp(ops[i].op, syms) == 0)
@@ -1816,6 +1828,8 @@ void gnq_deduce_types_test() {
 
   assert(deduce_as_(&a, "(42 + 21)", "i32"));
   assert(deduce_as_(&a, "(2 + 1) * 4", "i32"));
+  assert(deduce_as_(&a, "-(42 + 21)", "i32"));
+  assert(deduce_as_(&a, "!false", "bool"));
 
   assert(deduce_as_(&a, "a := 21", "i32"));
   assert(deduce_as_(&a, "a := 2.1\n a", "f64"));
@@ -2145,6 +2159,16 @@ size_t gnq_to_c_expression(Arena *a, Node *expr, char *b, size_t s) {
   } else if (gnq_type(expr) == Bool) {
     p += snprintf(b + p, s - p, "%s", gnq_tobool(expr) ? "true" : "false");
   } else {
+    if (2 == gnq_list_len(expr)) {
+      for (size_t i = 0; i < sizeof(un_pre_ops) / sizeof(un_pre_ops[0]); ++i)
+        if (gnq_is_call(expr, un_pre_ops[i])) {
+          gnq_next(&expr);
+          p += snprintf(b + p, s - p, "%s", un_pre_ops[i]);
+          p += gnq_to_c_expression(a, gnq_next(&expr), b + p, s - p);
+          assert(strcmp(un_pre_ops[i], "*") != 0 && strcmp(un_pre_ops[i], "!") != 0 && strcmp(un_pre_ops[i], "&") != 0);
+          return p;
+        }
+    }
     for (size_t i = 0; i < sizeof(ops) / sizeof(ops[0]); ++i)
       if (gnq_is_call(expr, ops[i].op)) {
         gnq_next(&expr);
@@ -2246,6 +2270,10 @@ void gnq_convert_to_c() {
 
   a = Arena_create(256);
   assert(write_c_(&a, "fn main() {return 1+3*4}", "i32 f11(){return 1+3*4;}"));
+  Arena_free(&a);
+
+  a = Arena_create(256);
+  assert(write_c_(&a, "fn main() {return ~1}", "i32 f11(){return ~1;}"));
   Arena_free(&a);
 }
 
