@@ -1544,6 +1544,8 @@ Node *gnq_deduce_types(Arena *a, TypeStack *ts, Node *n, Node **rt) {
       Node *var = gnq_next(&n);
       assert(gnq_is_sym(var));
       Node *type_of_id = TypeStack_find(ts, gnq_tosym(var));
+      if (!type_of_id)
+        printf("unknown id '%s'\n", gnq_tosym(var));
       assert(type_of_id);
       return type_of_id;
     }
@@ -2156,8 +2158,19 @@ Node *gnq_mod_find(Node *mo, const char *id_name) {
   }
   return NULL;
 }
+void gnq_mod_init_TypeStack(Node *mo, TypeStack *ts) {
+  Node *sym = gnq_next(&mo);
+  assert(sym == &SYM_MOD);
+  while (!gnq_is_nil(mo)) {
+    Node *assign = gnq_next(&mo);
+    assert(gnq_is_call(assign, ":="));
+    Node *id = gnq_car(gnq_cdr(assign));
+    assert(gnq_is_call(id, "id"));
+    TypeStack_push(ts, gnq_id_sym(id), gnq_car(gnq_cdr(gnq_cdr(assign))));
+  }
+}
 
-size_t gnq_to_c_expression(Arena *a, Node *expr, char *b, size_t s) {
+size_t gnq_to_c_expression(Arena *a, TypeStack *ts, Node *expr, char *b, size_t s) {
   size_t p = 0;
 
   if (gnq_type(expr) == NumberInt) {
@@ -2166,12 +2179,20 @@ size_t gnq_to_c_expression(Arena *a, Node *expr, char *b, size_t s) {
     p += snprintf(b + p, s - p, "%g", gnq_tofloat(expr));
   } else if (gnq_type(expr) == Bool) {
     p += snprintf(b + p, s - p, "%s", gnq_tobool(expr) ? "true" : "false");
+  } else if (gnq_is_call(expr, "id")) {
+    p += snprintf(b + p, s - p, "%s", gnq_id_sym(expr));
+  } else if (gnq_is_call(expr, "call")) {
+    gnq_next(&expr);
+    Node *callable = gnq_next(&expr);
+    Node *fn = gnq_deduce_types(a, ts, callable, NULL);
+    assert(gnq_is_call(fn, "fn"));
+    p += snprintf(b + p, s - p, "%s()", gnq_fn_c_name(a, fn, (Node *[]){}, 0));
   } else {
     if (2 == gnq_list_len(expr)) {
       for (size_t i = 0; i < sizeof(un_post_ops) / sizeof(un_post_ops[0]); ++i)
         if (gnq_is_call(expr, un_post_ops[i])) {
           gnq_next(&expr);
-          p += gnq_to_c_expression(a, gnq_next(&expr), b + p, s - p);
+          p += gnq_to_c_expression(a, ts, gnq_next(&expr), b + p, s - p);
           p += snprintf(b + p, s - p, "%s", &un_post_ops[i][1]);
           return p;
         }
@@ -2179,7 +2200,7 @@ size_t gnq_to_c_expression(Arena *a, Node *expr, char *b, size_t s) {
         if (gnq_is_call(expr, un_pre_ops[i])) {
           gnq_next(&expr);
           p += snprintf(b + p, s - p, "%s", un_pre_ops[i]);
-          p += gnq_to_c_expression(a, gnq_next(&expr), b + p, s - p);
+          p += gnq_to_c_expression(a, ts, gnq_next(&expr), b + p, s - p);
           assert(strcmp(un_pre_ops[i], "*") != 0 && strcmp(un_pre_ops[i], "!") != 0 && strcmp(un_pre_ops[i], "&") != 0);
           return p;
         }
@@ -2187,12 +2208,12 @@ size_t gnq_to_c_expression(Arena *a, Node *expr, char *b, size_t s) {
     for (size_t i = 0; i < sizeof(ops) / sizeof(ops[0]); ++i)
       if (gnq_is_call(expr, ops[i].op)) {
         gnq_next(&expr);
-        p += gnq_to_c_expression(a, gnq_next(&expr), b + p, s - p);
+        p += gnq_to_c_expression(a, ts, gnq_next(&expr), b + p, s - p);
         p += snprintf(b + p, s - p, "%s", ops[i].op);
-        p += gnq_to_c_expression(a, gnq_next(&expr), b + p, s - p);
+        p += gnq_to_c_expression(a, ts, gnq_next(&expr), b + p, s - p);
         return p;
       }
-
+    lisp_dbg("UNKNWON_C_EXPRESSION: ", expr);
 #define UNKNWON_C_EXPRESSION false
     assert(UNKNWON_C_EXPRESSION);
   }
@@ -2200,24 +2221,36 @@ size_t gnq_to_c_expression(Arena *a, Node *expr, char *b, size_t s) {
   return p;
 }
 
-size_t gnq_to_c_statement(Arena *a, Node *stat, char *b, size_t s) {
+size_t gnq_to_c_statement(Arena *a, TypeStack *ts, Node *stat, char *b, size_t s) {
   size_t p = 0;
 
   if (gnq_is_call(stat, "{}")) {
     gnq_next(&stat);
     p += snprintf(b + p, s - p, "{");
     while (!gnq_is_nil(stat))
-      p += gnq_to_c_statement(a, gnq_next(&stat), b + p, s - p);
+      p += gnq_to_c_statement(a, ts, gnq_next(&stat), b + p, s - p);
     p += snprintf(b + p, s - p, "}");
+  } else if (gnq_is_call(stat, ":=")) {
+    gnq_next(&stat);
+    Node *id = gnq_next(&stat);
+    assert(gnq_is_call(id, "id"));
+    const char *idn = gnq_id_sym(id);
+    Node *val = gnq_next(&stat);
+    Node *t = gnq_deduce_types(a, ts, val, NULL);
+    TypeStack_push(ts, idn, t);
+    p += snprintf(b + p, s - p, "%s %s=", gnq_tosym(t), idn);
+    p += gnq_to_c_expression(a, ts, val, b + p, s - p);
+    p += snprintf(b + p, s - p, ";");
   } else if (gnq_is_call(stat, "return")) {
     gnq_next(&stat);
     p += snprintf(b + p, s - p, "return");
     if (!gnq_is_nil(stat)) {
       p += snprintf(b + p, s - p, " ");
-      p += gnq_to_c_expression(a, gnq_next(&stat), b + p, s - p);
+      p += gnq_to_c_expression(a, ts, gnq_next(&stat), b + p, s - p);
     }
     p += snprintf(b + p, s - p, ";");
   } else {
+    lisp_dbg("UNKNWON_C_STATEMENT: ", stat);
 #define UNKNWON_C_STATEMENT false
     assert(UNKNWON_C_STATEMENT);
   }
@@ -2225,7 +2258,7 @@ size_t gnq_to_c_statement(Arena *a, Node *stat, char *b, size_t s) {
   return p;
 }
 
-size_t gnq_to_c_fn(Arena *a, Node *fn, char *b, size_t s) {
+size_t gnq_to_c_fn(Arena *a, TypeStack *ts, Node *fn, char *b, size_t s) {
   assert(gnq_is_call(fn, "fn"));
 
   Node *scope = gnq_car(gnq_cdr(gnq_cdr(fn)));
@@ -2240,16 +2273,18 @@ size_t gnq_to_c_fn(Arena *a, Node *fn, char *b, size_t s) {
     assert(fn_name && *fn_name);
 
     p += snprintf(b + p, s - p, "%s %s()", gnq_tosym(rt), fn_name);
-    p += gnq_to_c_statement(a, scope, b + p, s - p);
+    p += gnq_to_c_statement(a, ts, scope, b + p, s - p);
   }
-  return 0;
+  return p;
 }
 
-size_t gnq_to_c(Arena *a, char *b, size_t s) {
+size_t gnq_to_c(Arena *a, TypeStack *ts, char *b, size_t s) {
   Node *fns = a->functions;
   size_t p = 0;
-  while (!gnq_is_nil(fns))
-    p += gnq_to_c_fn(a, gnq_next(&fns), b + p, s - p);
+  while (!gnq_is_nil(fns)) {
+    p += gnq_to_c_fn(a, ts, gnq_next(&fns), b + p, s - p);
+    p += snprintf(b + p, s - p, "\n");
+  }
   return p;
 }
 
@@ -2259,7 +2294,7 @@ bool write_c_(Arena *a, const char *gnq, const char *c) {
   assert(main && gnq_is_call(main, "fn"));
 
   TypeStack ts = (TypeStack){{}, 0, 0};
-  TypeStack_push(&ts, "main", main);
+  gnq_mod_init_TypeStack(mod, &ts);
   Node *dummy_main_call = gnq_parse_statement(a, &(State){"main()", {0, 0}});
 
   Node *return_type = &unparsed_return;
@@ -2268,7 +2303,7 @@ bool write_c_(Arena *a, const char *gnq, const char *c) {
   assert(!gnq_is_nil(a->functions));
 
   char code[256] = {0};
-  gnq_to_c(a, code, sizeof(code));
+  gnq_to_c(a, &ts, code, sizeof(code));
   if (strcmp(code, c) == 0)
     return true;
 
@@ -2280,19 +2315,31 @@ void gnq_convert_to_c() {
   printf("gnq_convert_to_c\n");
 
   Arena a = Arena_create(256);
-  assert(write_c_(&a, "fn main() {return 0}", "i32 f11(){return 0;}"));
+  assert(write_c_(&a, "fn main() {return 0}", "i32 f11(){return 0;}\n"));
   Arena_free(&a);
 
   a = Arena_create(256);
-  assert(write_c_(&a, "fn main() {return 1+3*4}", "i32 f11(){return 1+3*4;}"));
+  assert(write_c_(&a, "fn main() {return 1+3*4}", "i32 f11(){return 1+3*4;}\n"));
   Arena_free(&a);
 
   a = Arena_create(256);
-  assert(write_c_(&a, "fn main() {return ~1}", "i32 f11(){return ~1;}"));
+  assert(write_c_(&a, "fn main() {return ~1}", "i32 f11(){return ~1;}\n"));
   Arena_free(&a);
 
   a = Arena_create(256);
-  assert(write_c_(&a, "fn main() {return 1++}", "i32 f11(){return 1++;}"));
+  assert(write_c_(&a, "fn main() {return 1++}", "i32 f11(){return 1++;}\n"));
+  Arena_free(&a);
+
+  a = Arena_create(256);
+  assert(write_c_(&a, "fn main() { a := 4\n return a}", "i32 f11(){i32 a=4;return a;}\n"));
+  Arena_free(&a);
+
+  a = Arena_create(256);
+  assert(write_c_(&a,
+                  "fn fun1() { return 4 }\n"
+                  "fn main() { return fun1() }",
+                  "i32 f11(){return 4;}\n"
+                  "i32 f21(){return f11();}\n"));
   Arena_free(&a);
 }
 
