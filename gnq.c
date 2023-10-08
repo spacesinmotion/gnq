@@ -128,6 +128,7 @@ BinOp *getop(const char *ch) {
 }
 
 const char *un_pre_ops[] = {"++", "--", "*", "~", "!", "-", "+", "&"};
+const char *un_post_ops[] = {">++", ">--"};
 
 typedef struct Node Node;
 
@@ -922,7 +923,6 @@ Node *gnq_parse_suffix_expression(Arena *a, State *st, Node *e) {
   // if (check_whitespace_for_nl(st))
   //   return e;
 
-  const char *un_post_ops[] = {">++", ">--"};
   for (size_t i = 0; !suffix && i < sizeof(un_post_ops) / sizeof(const char *); ++i) {
     if (check_op(st, un_post_ops[i] + 1)) {
       suffix = gnq_list(a, 2, gnq_sym(a, un_post_ops[i]), e);
@@ -1755,6 +1755,10 @@ Node *gnq_deduce_types(Arena *a, TypeStack *ts, Node *n, Node **rt) {
     }
 
     if (1 == gnq_list_len(n)) {
+      for (size_t i = 0; i < sizeof(un_post_ops) / sizeof(un_post_ops[0]); ++i)
+        if (strcmp(un_post_ops[i], syms) == 0) {
+          return gnq_deduce_types(a, ts, gnq_next(&n), rt);
+        }
       for (size_t i = 0; i < sizeof(un_pre_ops) / sizeof(un_pre_ops[0]); ++i)
         if (strcmp(un_pre_ops[i], syms) == 0) {
           Node *t1 = gnq_deduce_types(a, ts, gnq_next(&n), rt);
@@ -1881,6 +1885,10 @@ void gnq_deduce_types_advanced_test() {
   assert(deduce_as__(&a, &ts, "a := 42", "i32"));
   assert(deduce_as__(&a, &ts, "b := a", "i32"));
   assert(deduce_as__(&a, &ts, "c := b", "i32"));
+
+  assert(deduce_as__(&a, &ts, "++a", "i32"));
+  assert(deduce_as__(&a, &ts, "a++", "i32"));
+
   Arena_free(&a);
 
   a = Arena_create(128);
@@ -2160,6 +2168,13 @@ size_t gnq_to_c_expression(Arena *a, Node *expr, char *b, size_t s) {
     p += snprintf(b + p, s - p, "%s", gnq_tobool(expr) ? "true" : "false");
   } else {
     if (2 == gnq_list_len(expr)) {
+      for (size_t i = 0; i < sizeof(un_post_ops) / sizeof(un_post_ops[0]); ++i)
+        if (gnq_is_call(expr, un_post_ops[i])) {
+          gnq_next(&expr);
+          p += gnq_to_c_expression(a, gnq_next(&expr), b + p, s - p);
+          p += snprintf(b + p, s - p, "%s", &un_post_ops[i][1]);
+          return p;
+        }
       for (size_t i = 0; i < sizeof(un_pre_ops) / sizeof(un_pre_ops[0]); ++i)
         if (gnq_is_call(expr, un_pre_ops[i])) {
           gnq_next(&expr);
@@ -2274,6 +2289,10 @@ void gnq_convert_to_c() {
 
   a = Arena_create(256);
   assert(write_c_(&a, "fn main() {return ~1}", "i32 f11(){return ~1;}"));
+  Arena_free(&a);
+
+  a = Arena_create(256);
+  assert(write_c_(&a, "fn main() {return 1++}", "i32 f11(){return 1++;}"));
   Arena_free(&a);
 }
 
