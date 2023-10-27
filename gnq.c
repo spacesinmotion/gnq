@@ -437,7 +437,7 @@ const char *gnq_fn_c_name(Arena *a, Node *fn, Node *param_types[], int param_len
       }
     }
   }
-
+  printf("did not found function %p wit %d args\n", fn, param_len);
   assert(false);
   return "";
 }
@@ -2183,10 +2183,20 @@ size_t gnq_to_c_expression(Arena *a, TypeStack *ts, Node *expr, char *b, size_t 
     p += snprintf(b + p, s - p, "%s", gnq_id_sym(expr));
   } else if (gnq_is_call(expr, "call")) {
     gnq_next(&expr);
-    Node *callable = gnq_next(&expr);
-    Node *fn = gnq_deduce_types(a, ts, callable, NULL);
+    Node *fn = gnq_deduce_types(a, ts, gnq_next(&expr), NULL);
     assert(gnq_is_call(fn, "fn"));
-    p += snprintf(b + p, s - p, "%s()", gnq_fn_c_name(a, fn, (Node *[]){}, 0));
+    Node *paraml = gnq_next(&expr);
+    Node *paraml2 = paraml;
+    Node *param[128];
+    int param_len = 0;
+    while (!gnq_is_nil(paraml)) {
+      assert(param_len < 128);
+      param[param_len++] = gnq_deduce_types(a, ts, gnq_next(&paraml), NULL);
+    }
+    p += snprintf(b + p, s - p, "%s(", gnq_fn_c_name(a, fn, param, param_len));
+    while (!gnq_is_nil(paraml2))
+      p += gnq_to_c_expression(a, ts, gnq_next(&paraml2), b + p, s - p);
+    p += snprintf(b + p, s - p, ")");
   } else {
     if (2 == gnq_list_len(expr)) {
       for (size_t i = 0; i < sizeof(un_post_ops) / sizeof(un_post_ops[0]); ++i)
@@ -2260,9 +2270,10 @@ size_t gnq_to_c_statement(Arena *a, TypeStack *ts, Node *stat, char *b, size_t s
 
 size_t gnq_to_c_fn(Arena *a, TypeStack *ts, Node *fn, char *b, size_t s) {
   assert(gnq_is_call(fn, "fn"));
-
+  // lisp_dbg("fn ", fn);
   Node *scope = gnq_car(gnq_cdr(gnq_cdr(fn)));
   Node *a_deduced = gnq_cdr(gnq_cdr(gnq_cdr(fn)));
+  Node *ids = gnq_car(gnq_cdr(fn));
   size_t p = 0;
   while (!gnq_is_nil(a_deduced)) {
     Node *fnd = gnq_next(&a_deduced);
@@ -2271,8 +2282,17 @@ size_t gnq_to_c_fn(Arena *a, TypeStack *ts, Node *fn, char *b, size_t s) {
     Node *param = fnd;
     const char *fn_name = gnq_fn_c_name_(a, fn, param);
     assert(fn_name && *fn_name);
+    p += snprintf(b + p, s - p, "%s %s(", gnq_tosym(rt), fn_name);
 
-    p += snprintf(b + p, s - p, "%s %s()", gnq_tosym(rt), fn_name);
+    assert(gnq_list_len(param) == gnq_list_len(ids));
+    Node *idst = ids;
+    while (!gnq_is_nil(param)) {
+      // lisp_dbg("fn parameter ", param);
+      Node *var = gnq_next(&idst);
+      Node *type = gnq_next(&param);
+      p += snprintf(b + p, s - p, "%s %s", gnq_tosym(type), gnq_id_sym(var));
+    }
+    p += snprintf(b + p, s - p, ")");
     p += gnq_to_c_statement(a, ts, scope, b + p, s - p);
   }
   return p;
@@ -2307,7 +2327,9 @@ bool write_c_(Arena *a, const char *gnq, const char *c) {
   if (strcmp(code, c) == 0)
     return true;
 
-  printf("expect '%s' got '%s'\n", c, code);
+  printf(" expect '%s' \n"
+         "    got '%s'\n",
+         c, code);
   return false;
 }
 
@@ -2338,8 +2360,18 @@ void gnq_convert_to_c() {
   assert(write_c_(&a,
                   "fn fun1() { return 4 }\n"
                   "fn main() { return fun1() }",
+
                   "i32 f11(){return 4;}\n"
                   "i32 f21(){return f11();}\n"));
+  Arena_free(&a);
+
+  a = Arena_create(256);
+  assert(write_c_(&a,
+                  "fn fun1(x) { return x }\n"
+                  "fn main() { return fun1(32) }",
+
+                  "i32 f11(i32 x){return x;}\n"
+                  "i32 f21(){return f11(32);}\n"));
   Arena_free(&a);
 }
 
